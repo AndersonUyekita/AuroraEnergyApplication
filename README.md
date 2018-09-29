@@ -12,3 +12,9 @@ All sources in this studies were found in the internet:
   a. Performance-summaries-for-electricity-distributors-Oct-2017.xlsx;
   b. Electricity-distributors-information-disclosures-2013March-2018.xlm;
   c. Aurora-Energy-2017-one-page-summary3.pdf
+
+## Results
+
+The results of this studies is published in RPubs.
+
+Please, visit the URL bellow:
