@@ -1,0 +1,10 @@
+base
+readxl
+dplyr
+ggplot2
+ggrepel
+ggfortify
+ggthemes
+kableExtra
+rmdformats
+prettydoc
