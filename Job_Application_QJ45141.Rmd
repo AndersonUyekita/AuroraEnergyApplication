@@ -4,9 +4,13 @@ author: "AH Uyekita"
 date: "30 de setembro de 2018"
 output:
   html_document:
-    theme: flatly
+    theme: spacelab
+    highlight: tango
     toc: true
     toc_float: true
+    collapse: true
+    smooth_scroll: true
+    number_sections: false
 ---
 
 ```{r Setup, include=FALSE}
@@ -31,385 +35,447 @@ library(ggthemes)
 library(kableExtra)
 library(rmdformats)
 library(prettydoc)
-
-# Functions
-source("Filtering.R")
-
+library(leaflet)
+library(geojsonio)
+library(sp)
+library(tidyr)
 ```
 
 
 ```{r Importing,cache=TRUE,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
-# Importing files
-database_13_18 <- read_xlsx(path = "~/Workplace/Electricity-distributors-information-disclosures-2013March-2018.xlsm" , sheet = "Database" , col_names = TRUE)
+# 4. Importing the database plainsheet from the Electricity Information Disclosure
 
-colnames(x = database_13_18) <- c("EDB",
-                                  "Network",
-                                  "Disclosure_year",
-                                  "Schedule",
-                                  "Schedule_reference",
-                                  "Section",
-                                  "Category",
-                                  "Subcategory",
-                                  "Description",
-                                  "Observation_year",
-                                  "Forecast_year",
-                                  "Units",
-                                  "Value",
-                                  "Text_input")
+       ## 4.1. Importing Dataset from ComCom archive 
+db_raw <- read_xlsx(path = "~/Workplace/04-Dataset/Electricity-distributors-information-disclosures-2013March-2018.xlsm", 
+                    sheet = "Database",   # Sheet to be imported
+                    col_names = TRUE)     # Keep theoriginal columns name
 
+       ## 4.2 Renaming column to remove spaces
+colnames(x = db_raw) <-     c("EDB",
+                            "Network",
+                            "Disclosure_year",
+                            "Schedule",
+                            "Schedule_reference",
+                            "Section",
+                            "Category",
+                            "Subcategory",
+                            "Description",
+                            "Year",
+                            "Forecast_year",
+                            "Units",
+                            "Value",
+                            "Text_input")
+
+       ## 4.3. Importing the Polygons of New Zealand Regions
+nz_region <- geojsonio::geojson_read("~/Workplace/01-Maps/nz_region.geojson",
+                                      what = "sp")
+
+       ## 4.4. Importing the Polygons of New Zealand Territories
+nz_territories <- geojsonio::geojson_read("~/Workplace/01-Maps/nz_territories.geojson",
+                                      what = "sp")
 ```
 
 
-```{r Data-Manipulation,echo=FALSE,include=FALSE}
+```{r Data-Manipulation,echo=FALSE,include=FALSE,cache=TRUE}
 # This chunk has all principal calculations.
 
-   ## 5.1. Reliability ####
+# 5. Creating a Neaty Data ####
 
-      ### 5.1.1. Interruptions Unplanned #### 
-dt_int_unplan <- Filtering(x = database_13_18,
-          EDB_ = "",
-          Network_ = "",
-          Disclosure_year_ = "",
-          Schedule_ = "",
-          Schedule_reference_ = "",
-          Section_ = "10(i): Interruptions",
-          Category_ = "",
-          Subcategory_ = "Number of interruptions",
-          Description_ = "Class C (unplanned interruptions on the network)",
-          Observation_year_ = "",
-          Forecast_year_ = "",
-          Units_ = "",
-          Value_ = "",
-          Text_input_ = "")
+# Ordering the raw data
+db_raw <- db_raw %>% arrange(-Year,EDB,Network)
 
-      ### 5.1.2. Interruptions Planned ####
-dt_int <- Filtering(x = database_13_18,
-                         EDB_ = "",
-                         Network_ = "",
-                         Disclosure_year_ = "",
-                         Schedule_ = "SCHEDULE 10: REPORT ON NETWORK RELIABILITY",
-                         Schedule_reference_ = "",
-                         Section_ = "10(i): Interruptions",
-                         Category_ = "",
-                         Subcategory_ = "Number of interruptions",
-                         Description_ = "",
-                         Observation_year_ = "",
-                         Forecast_year_ = "",
-                         Units_ = "",
-                         Value_ = "",
-                         Text_input_ = "")
+# Removing the space between column names
+db_raw$Network <- gsub(pattern = " ",
+                       replacement = "",
+                       x = db_raw$Network)
 
-dt_int_plan <- dt_int %>%
-                     filter(!Description %in% c("Class C (unplanned interruptions on the network)",
-                                               "Class E (unplanned interruptions of EDB owned generation)",
-                                               "Class F (unplanned interruptions of generation owned by others)",
-                                               "Class G (unplanned interruptions caused by another disclosing entity)",
-                                               "Class H (planned interruptions caused by another disclosing entity)"))
-
-      ### 5.1.3. Interruptions Rate ####
-              ## Until 2015 Interruption rate after Interruptions per 100 circuit km
-              # Considering the outages and planned outages.
-dt_int_rate <- Filtering(x = database_13_18,
-                           EDB_ = "",
-                           Network_ = "",
-                           Disclosure_year_ = "2017",
-                           Schedule_ = "",
-                           Schedule_reference_ = "",
-                           Section_ = "1(v): Reliability",
-                           Category_ = "Interruption rate",
-                           Subcategory_ = "",
-                           Description_ = "",
-                           Observation_year_ = "",
-                           Forecast_year_ = "",
-                           Units_ = "",
-                           Value_ = "",
-                           Text_input_ = "")
-
-      ### 5.1.4. Consumer restored in less than 3 hours ####
-rest_cons_less_3h <- Filtering(x = database_13_18,
-                              EDB_ = "",
-                              Network_ = "",
-                              Disclosure_year_ = "",
-                              Schedule_ = "",
-                              Schedule_reference_ = "",
-                              Section_ = "10(i): Interruptions",
-                              Category_ = "",
-                              Subcategory_ = "Class C interruptions restored within",
-                              Description_ = "",
-                              Observation_year_ = "",
-                              Forecast_year_ = "",
-                              Units_ = "",
-                              Value_ = "",
-                              Text_input_ = "")
-
-rest_cons_less_3h <- rest_cons_less_3h %>%
-                            filter(!Description %in% ">3hrs")
+# Creating a new database with only EDB, Network, and Year.
+# I used Section, Category, Subcategory, and Description to subset
+# the unique pair EDB and Network.
+db_neat <- db_raw %>% filter(Section %in% "9c: Overhead lines and underground cables",
+                             Category %in% "Total overhead length",
+                             Subcategory %in% "Circuit length (km)",
+                             Description %in% "Total overhead length") %>%
+                                   select(EDB,Network,Year)
 
 
-      ### 5.1.5. Consumer restored in more than 3 hours ####
-rest_cons_over_3h <- Filtering(x = database_13_18,
-                               EDB_ = "",
-                               Network_ = "",
-                               Disclosure_year_ = "",
-                               Schedule_ = "",
-                               Schedule_reference_ = "",
-                               Section_ = "10(i): Interruptions",
-                               Category_ = "",
-                               Subcategory_ = "Class C interruptions restored within",
-                               Description_ = ">3hrs",
-                               Observation_year_ = "",
-                               Forecast_year_ = "",
-                               Units_ = "",
-                               Value_ = "",
-                               Text_input_ = "")
+# 6. Data Manipulation Explanation #########################################################
 
-      ### 5.1.7. Transpower influency in outages ####
-tp_interruptions <- dt_int %>%
-       filter(Description %in% c("Class A (planned interruptions by Transpower)","Class D (unplanned interruptions by Transpower)"))
+# I am going to fill the db_neat with data, each column is a new characteristc.
+# For any kind of characteristc I will give prefixes in your variable, for instance:
+#
+#      PREFIXES                                  SUFIXES
+#
+#      Asset:        a                           Percentage: p
+#      Reliability:  r
+#      Economic:     e
+#      Aurora:       au
+#      All EDB:      edb
+#      Table:        tb
+#      Graphic:      gp
+#
+# List of variables:
+#      r_i_un:       Interruptions Unplanned (Quantity)
+#      r__ipl:       Interruptions Planned (Quantity)
+#      r_i_tot:      Total interruptions
+#      r_less_3:     Consumer restored in less than 3 hours
+#      r_more_3:     Consumer restored in more than 3 hours
+#      r_tp:         Transpower Interruptions
+#      r_un_tp_saidi: Transpower SAIDI Unplanned
+#      r_pl_tp_saidi: Transpower SAIDI Planned
+#      r_un_tp_saifi: Transpower SAIFI Unplanned
+#      r_pl_tp_saifi: Transpower SAIFI Planned
+#      r_un_saidi:   Unplanned SAIDI
+#      r_pl_saidi:   Planned SAIDI
+#      r_saidi:      Total SAIDI
+#      r_un_saifi:   Unplanned SAIFI
+#      r_pl_saifi:   Planned SAIFI
+#      r_saifi:      Total SAIFI
+#      r_ae_saidi:   Adverse Enviroment cause of SAIDI
+#      r_aw_saidi:   Adverse weather cause of SAIDI
+#      r_idk_saidi:  Cause unknown cause of SAIDI
+#      r_eqp_saidi:  Defective equipment cause of SAIDI
+#      r_hum_saidi:  Human error cause of SAIDI
+#      r_lig_saidi:  Lightning cause of SAIDI
+#      r_tpi_saidi:  Third party interference  cause of SAIDI
+#      r_veg_saidi:  Vegetation cause of SAIDI
+#      r_wlf_saidi:  Wildlife cause of SAIDI
+#      r_ae_saifi:   Adverse environment cause of SAIFI
+#      r_aw_saifi:   Adverse weather cause of SAIFI
+#      r_idk_saifi:  Cause unknown cause of SAIFI
+#      r_eqp_saifi:  Defective equipment cause of SAIFI
+#      r_hum_saifi:  Human error cause of SAIFI
+#      r_lig_saifi:  Lightning cause of SAIFI
+#      r_tpi_saifi:  Third party interference cause of SAIFI 
+#      r_veg_saifi:  Vegetation cause of SAIFI
+#      r_wlf_saifi:  Wildlife cause of SAIFI
+#      a_wp:         Wood Pole
+#      a_cp:         Concrete Pole or Steel Structure
+#      a_ot:         Other type of Pole
+#      a_bc:         Capacitor Banks
+#      a_vr:         Voltage Regulator
+#      a_li:         Length of Network
+#      a_li_st:      Length of line used in Street Lighting
+#      au_tb_li:     Line Length Table in Aurora
+#      au_tb_li_st:  Street Lighting Line Table in Aurora
+#      a_lv_li:      Low Voltage Lines
+#      au_tb_lv_li:  Low Voltage Table in Aurora
+#      a_lv_cb:      Low Voltage Cable
+#      au_tb_lv_cb:  Low Voltage Cable Table in Aurora
+#      au_tb_li_cb_st: Comparasion between LV Lines, Cables, and Street.
+#      a_hv_li_oh:   Overhead High Voltage Line (wire conductor)
+#      a_hv_li_swer: Single Wired earth return
+#      a_hv_li_acc:  High Voltage Aerial Cable Conductor
+#      a_hv_sb_li:   High Voltage Subtransmission Line
+#      au_tb_hv_sb_li: High Voltage Subtransmission Lines in Aurora
+#      a_hv_cb_xlpe:   HV Isolated Cable 
+#      a_hv_cb_pilc: PILC Cable
+#      a_hv_cb_sub:  Submarine Cable
+#      a_li_tree:    Lines on areas with Tree Management
+#      au_tb_li_tree: Length of Line under Tree Management
+#      a_li_coge:    Line Length under Coastal and Geothermal effect
+#      au_tb_li_coge: Table with Line Length under influency of Coastal and Geothermal
+#      a_lv_con:     LV Consumer
 
-temp <- tp_interruptions %>%
-              select(EDB, Network, Observation_year,Description,Value) %>%
-                     filter(Network %in% "All",Description %in% "Class A (planned interruptions by Transpower)")
 
-      ### 5.1.8. SAIDI ####
-SAIDI_full_descp <- Filtering(x = database_13_18,
-                       EDB_ = "",
-                       Network_ = "",
-                       Disclosure_year_ = "",
-                       Schedule_ = "",
-                       Schedule_reference_ = "",
-                       Section_ = "10(i): Interruptions",
-                       Category_ = "",
-                       Subcategory_ = "SAIDI",
-                       Description_ = "",
-                       Observation_year_ = "",
-                       Forecast_year_ = "",
-                       Units_ = "",
-                       Value_ = "",
-                       Text_input_ = "")
+# 6. Data Cleaning ###############################################
 
-         #### 5.1.8.1. SAIDI Planned ####
-SAIDI_plan <- SAIDI_full_descp %>%
-                     select(EDB,Network,Observation_year,Description,Value) %>%
-                            filter(Description %in% "Class B (planned interruptions on the network)")
+# In this chapter I will performe a extense calculation of ratios, infos, data, etc.
 
-         #### 5.1.8.2. SAIDI Unplanned ####
-SAIDI_unplan <- SAIDI_full_descp %>%
-                      select(EDB,Network,Observation_year,Description,Value) %>%
-                            filter(Description %in% "Class C (unplanned interruptions on the network)")
 
-         #### 5.1.8.3. SAIDI Total ####
-# Cleaning
-rm(temp);rm(temp1);rm(temp2);rm(temp3)
+## 6.1. Reliability ####
 
-temp1 <- SAIDI_plan %>%
-              select(EDB,Network,Observation_year,Value)
+       ### 5.1.1. Interruptions #### 
 
-temp1 <- arrange(temp1,desc(Observation_year),EDB,Network)
+## Unplanned
+db_neat  <- bind_cols(db_neat,
+                     db_raw %>% 
+                            filter(Section %in% "10(i): Interruptions",
+                            Subcategory %in% "Number of interruptions",
+                            Description %in% "Class C (unplanned interruptions on the network)") %>%
+                                   select(r_i_un= Value)
+                     )
 
-temp2 <- SAIDI_unplan %>%
-              select(EDB,Network,Observation_year,Value)
+## Planned
 
-temp2 <- arrange(temp2,desc(Observation_year),EDB,Network)
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Category %in% "Interruptions by class",
+                                    Description %in% "Class B (planned interruptions on the network)") %>%
+                             select(r_i_pl= Value)
+                     )
+
+## Total
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Category %in% "Interruptions by class",
+                                    Description %in% "Total") %>%
+                             select(r_i_tot= Value)
+                     )
 
 
 
-SAIDI_total <- cbind(temp1,temp2[,4],temp1[,4]+temp2[,4])
-       
-         #### 5.1.8.4. SAIDI by Causes ####
-SAIDI_causes <- Filtering(x = database_13_18,
-                              EDB_ = "",
-                              Network_ = "",
-                              Disclosure_year_ = "",
-                              Schedule_ = "",
-                              Schedule_reference_ = "",
-                              Section_ = "10(ii): Class C Interruptions and Duration by Cause",
-                              Category_ = "",
-                              Subcategory_ = "SAIDI",
-                              Description_ = "",
-                              Observation_year_ = "",
-                              Forecast_year_ = "",
-                              Units_ = "",
-                              Value_ = "",
-                              Text_input_ = "")
+       ### 5.1.3. Consumer restored in less than 3 hours ####
 
-SAIDI_causes <- SAIDI_causes %>%
-                     select(EDB,Network,Observation_year,Description,Value)
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Category %in% "Interruption restoration",
+                                    !Description %in% ">3hrs") %>%            # ATENTION!! => DIFFERENT of Greater than 3 hour
+                             select(r_less_3= Value)                          # It means: Less than 3 hours
+                     )
 
-      ### 5.1.9. SAIFI ####
-SAIFI_full_descp <- Filtering(x = database_13_18,
-                              EDB_ = "",
-                              Network_ = "",
-                              Disclosure_year_ = "",
-                              Schedule_ = "",
-                              Schedule_reference_ = "",
-                              Section_ = "10(i): Interruptions",
-                              Category_ = "",
-                              Subcategory_ = "SAIFI",
-                              Description_ = "",
-                              Observation_year_ = "",
-                              Forecast_year_ = "",
-                              Units_ = "",
-                              Value_ = "",
-                              Text_input_ = "")
+       ### 5.1.5. Consumer restored in more than 3 hours ####
 
-         #### 5.9.1. SAIFI Planned ####
-SAIFI_plan <- SAIFI_full_descp %>%
-       select(EDB,Network,Observation_year,Description,Value) %>%
-       filter(Description %in% "Class B (planned interruptions on the network)")
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Category %in% "Interruption restoration",
+                                    Description %in% ">3hrs") %>%
+                             select(r_more_3= Value)
+                     )
 
+       ### 5.1.7. Transpower influency in outages ####
 
-         #### 5.9.2. SAIFI Unplanned ####
-SAIFI_unplan <- SAIFI_full_descp %>%
-       select(EDB,Network,Observation_year,Description,Value) %>%
-       filter(Description %in% "Class C (unplanned interruptions on the network)")
+## Interruptions Quantity
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Category %in% "Interruptions by class",
+                                    Description %in% "Class A (planned interruptions by Transpower)") %>%
+                                          select(r_tp= Value) +
+                      db_raw %>% 
+                            filter(Section %in% "10(i): Interruptions",
+                                   Category %in% "Interruptions by class",
+                                   Description %in% "Class D (unplanned interruptions by Transpower)") %>%
+                                          select(r_tp= Value)
+                     )
 
-         #### 5.9.3. SAIFI Total ####
-# Cleaning
-rm(temp);rm(temp1);rm(temp2);rm(temp3)
-
-temp1 <- SAIFI_plan %>%
-       select(EDB,Network,Observation_year,Value)
-
-temp1 <- arrange(temp1,desc(Observation_year),EDB,Network)
-
-temp2 <- SAIFI_unplan %>%
-       select(EDB,Network,Observation_year,Value)
-
-temp2 <- arrange(temp2,desc(Observation_year),EDB,Network)
-
-SAIFI_total <- cbind(temp1,temp2[,4],temp1[,4]+temp2[,4])
-
-
-
-
-
-
-
-         #### 5.9.4. SAIFI by Causes ####
-SAIFI_causes <- Filtering(x = database_13_18,
-                          EDB_ = "",
-                          Network_ = "",
-                          Disclosure_year_ = "",
-                          Schedule_ = "",
-                          Schedule_reference_ = "",
-                          Section_ = "10(ii): Class C Interruptions and Duration by Cause",
-                          Category_ = "",
-                          Subcategory_ = "SAIFI",
-                          Description_ = "",
-                          Observation_year_ = "",
-                          Forecast_year_ = "",
-                          Units_ = "",
-                          Value_ = "",
-                          Text_input_ = "")
-
-SAIFI_causes <- SAIFI_causes %>%
-       select(EDB,Network,Observation_year,Description,Value)
-
-
-   ## 5.2. Assets ####
-      ### 5.10.1. Poles ####
-poles <- Filtering(x = database_13_18,
-             EDB_ = "",
-             Network_ = "",
-             Disclosure_year_ = "",
-             Schedule_ = "",
-             Schedule_reference_ = "",
-             Section_ = "9a: Asset Register",
-             Category_ = "All - Overhead  Line",
-             Subcategory_ = "",
-             Description_ = "",
-             Observation_year_ = "",
-             Forecast_year_ = "",
-             Units_ = "",
-             Value_ = "",
-             Text_input_ = "")
-
-      ### 5.10.1. Poles in Aurora #####
-aurora_pole <- database_13_18 %>%
-                     filter(EDB %in% "Aurora Energy")
-
-
-# Poles in Dunedin
-aurora_pole_dunedin <- aurora_pole %>%
-                            filter(Network %in% "Dunedin",
-                                   Description %in% "Items at end of year (quantity)",
-                                   Subcategory %in% c("Wood poles","Concrete poles / steel structure"))
-
-
-aurora_pole_dunedin <- cbind(
-              aurora_pole_dunedin %>%
-                     filter(Subcategory %in% "Wood poles") %>%
-                     arrange(-Observation_year) %>%       
-                     select(Observation_year,Value),
-              
-              aurora_pole_dunedin %>%
-                     filter(Subcategory %in% "Concrete poles / steel structure") %>%
-                     arrange(-Observation_year) %>%       
-                     select(Value)
-              )
-
-
-colnames(aurora_pole_dunedin) <- c("Year","Wood Poles","Concrete Poles")
-
-aurora_pole_dunedin <- cbind(aurora_pole_dunedin, Total = aurora_pole_dunedin[,2] + aurora_pole_dunedin[,3])
-
-
-# Poles in Central Otago
-aurora_pole_otago <- aurora_pole %>%
-       filter(Network %in% "Central Otago",
-              Description %in% "Items at end of year (quantity)",
-              Subcategory %in% c("Wood poles","Concrete poles / steel structure"))
-
-
-aurora_pole_otago <- cbind(
-       aurora_pole_otago %>%
-              filter(Subcategory %in% "Wood poles") %>%
-              arrange(-Observation_year) %>%       
-              select(Observation_year,Value),
-       
-       aurora_pole_otago %>%
-              filter(Subcategory %in% "Concrete poles / steel structure") %>%
-              arrange(-Observation_year) %>%       
-              select(Value)
+## SAIDI Unplanned
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Subcategory %in% "SAIDI",
+                                    Description %in% "Class D (unplanned interruptions by Transpower)") %>%
+                             select(r_un_tp_saidi= Value)
 )
 
+## SAIDI Planned
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Subcategory %in% "SAIDI",
+                                    Description %in% "Class A (planned interruptions by Transpower)") %>%
+                             select(r_pl_tp_saidi= Value)
+)
 
-colnames(aurora_pole_otago) <- c("Year","Wood Poles","Concrete Poles")
+## SAIFI Unplanned
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Subcategory %in% "SAIFI",
+                                    Description %in% "Class D (unplanned interruptions by Transpower)") %>%
+                             select(r_un_tp_saifi= Value)
+)
 
-aurora_pole_otago <- cbind(aurora_pole_otago, Total = aurora_pole_otago[,2] + aurora_pole_otago[,3])
+## SAIFI Planned
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Subcategory %in% "SAIFI",
+                                    Description %in% "Class A (planned interruptions by Transpower)") %>%
+                             select(r_pl_tp_saifi= Value)
+)
 
+       ### 5.1.8. SAIDI ####
 
+## Unplanned
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Subcategory %in% "SAIDI",
+                                    Description %in% "Class C (unplanned interruptions on the network)") %>%
+                             select(r_un_saidi= Value)
+                     )
 
-#### 5.10.1.1 Aging Pole ####
+## Planned
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Subcategory %in% "SAIDI",
+                                    Description %in% "Class B (planned interruptions on the network)") %>%
+                             select(r_pl_saidi= Value)
+)
 
+## Total
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Subcategory %in% "SAIDI",
+                                    Description %in% "Total") %>%
+                             select(r_saidi= Value)
+                     )
 
-# Wood Poles
-rm(temp); rm(temp2)
-wood_pole_age <- database_13_18 %>%
-                     filter(Section %in% "9b: Asset Age Profile",
-                            Subcategory %in% "Wood poles")
+       ### 5.1.8. SAIFI ####
 
-temp <- wood_pole_age %>%
-       select(EDB,Network, Observation_year,Description,Value) %>%
-              filter(EDB %in% "Aurora Energy",
-                     !Description %in% c("Data accuracy (1-4)","Items at end of year (quantity)"))
+## Unplanned
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Subcategory %in% "SAIFI",
+                                    Description %in% "Class C (unplanned interruptions on the network)") %>%
+                             select(r_un_saifi= Value)
+                     )
 
-temp$Description <- gsub(pattern = "Number of assets at disclosure year end by installation date - ",replacement = "",x = temp$Description,ignore.case = FALSE)
+## Planned
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Subcategory %in% "SAIFI",
+                                    Description %in% "Class B (planned interruptions on the network)") %>%
+                             select(r_pl_saifi= Value)
+                     )
 
-temp <- temp %>%
-              filter(!Network %in% "All",
-                     !Description %in% "Total assets at year end")
+## Total
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "10(i): Interruptions",
+                                    Subcategory %in% "SAIFI",
+                                    Description %in% "Total") %>%
+                             select(r_saifi= Value)
+)
+       
+       ### 5.1.8.1. SAIDI by Causes ####
 
-for (i in 1:nrow(temp))
+# There are too many causes, for this reason, I will use for statement to put it in automatic
+# Causes
+type_desc <-  db_raw %>%    filter(Section %in% "10(ii): Class C Interruptions and Duration by Cause",
+                                   Subcategory %in% "SAIDI") %>%
+                                   select(Description) %>%
+                                          count(Description)
+# Creating Acronyms for each Cause
+type_desc <- bind_cols(type_desc,Acronyms = c("ae","aw","idk","eqp","hum","lig","tpi","veg","wlf"))
+
+# Loop
+for (i in 1:nrow(type_desc))
        {
-       if (temp[i,2] == "Central Otago")
-              {
-              temp[i,5] <- temp[i,5] * (-1)
-              }
+       # Save the column names
+       temp <- colnames(db_neat)
+       
+       # Subsetting the raw data and binding with dt_neat
+       db_neat  <- bind_cols(db_neat,
+                             db_raw %>% 
+                                    filter(Section %in% "10(ii): Class C Interruptions and Duration by Cause",
+                                           Subcategory %in% "SAIDI",
+                                           Description %in% type_desc[i,1]) %>%
+                                    select(Value)
+                            )
+       
+       # Naming the columns
+       colnames(db_neat) <- c(temp,paste("r_",type_desc[i,3],"_saidi",sep = ""))
        }
 
-ggplot(temp, aes(x=Description , y= Value, fill= Network)) +
+# Excluding
+rm(type_desc);rm(temp)
+
+       ### 5.1.8.2. SAIFI by Causes #####
+
+# Analog with the "SAIDI by Causes"
+# Causes
+type_desc <-  db_raw %>%    filter(Section %in% "10(ii): Class C Interruptions and Duration by Cause",
+                                   Subcategory %in% "SAIFI") %>%
+                                          select(Description) %>%
+                                          count(Description)
+# Creating Acronyms for each Cause
+type_desc <- bind_cols(type_desc,Acronyms = c("ae","aw","idk","eqp","hum","lig","tpi","veg","wlf"))
+
+# Loop
+for (i in 1:nrow(type_desc))
+{
+       # Save the column names
+       temp <- colnames(db_neat)
+       
+       # Subsetting the raw data and binding with dt_neat
+       db_neat  <- bind_cols(db_neat,
+                             db_raw %>% 
+                                    filter(Section %in% "10(ii): Class C Interruptions and Duration by Cause",
+                                           Subcategory %in% "SAIFI",
+                                           Description %in% type_desc[i,1]) %>%
+                                    select(Value)
+       )
+       
+       # Naming the columns
+       colnames(db_neat) <- c(temp,paste("r_",type_desc[i,3],"_saifi",sep = ""))
+}
+
+# Excluding temporaly variable
+rm(type_desc);rm(temp)
+
+
+## 5.2. Assets ####
+
+       ### 5.10.1. Poles ####
+
+## Wood Pole
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "All - Overhead  Line",
+                                    Subcategory %in% "Wood poles",
+                                    Description %in% "Items at end of year (quantity)") %>%
+                                          select(a_wp= Value)
+)
+
+## Concrete Pole or Steel Structure
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "All - Overhead  Line",
+                                    Subcategory %in% "Concrete poles / steel structure",
+                                    Description %in% "Items at end of year (quantity)") %>%
+                                          select(a_cp= Value)
+)
+
+## Other Pole
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "All - Overhead  Line",
+                                    Subcategory %in% "Other pole types",
+                                    Description %in% "Items at end of year (quantity)") %>%
+                                          select(a_ot= Value)
+)
+
+       ### 5.10.1.1 Aging Pole ####
+
+## Wood Poles
+
+# The same problem of the SAIDI/SAIFI causes.
+# Due to of variables number I will save this in a separated dataset.
+
+type_desc <- db_raw %>% 
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     !Description %in% c("Data accuracy (1-4)","Items at end of year (quantity)","Total assets at year end")) %>%
+                            count(Description)
+
+type_desc$Description <- gsub(pattern = "Number of assets at disclosure year end by installation date - ",replacement = "",x = type_desc$Description,ignore.case = FALSE)
+
+rm(type_desc)
+
+db_wp <- db_raw %>% 
+       filter(Section %in% "9b: Asset Age Profile",
+              Subcategory %in% "Wood poles",
+              !Description %in% c("Data accuracy (1-4)","Items at end of year (quantity)","Total assets at year end"))
+
+## Graphs                 
+
+gp_a_db_wp <- db_wp %>% select(EDB,Network,Description,Year,Value) %>% 
+                                   filter(EDB %in% "Aurora Energy", Year %in% "2017", !Network %in% "All")
+
+ggplot(gp_a_db_wp, aes(x=Description , y= Value, fill= Network)) +
        geom_bar(stat= "identity", width = .6) +
        coord_flip() +
        labs(title="Wood Poles") +
@@ -418,10 +484,10 @@ ggplot(temp, aes(x=Description , y= Value, fill= Network)) +
        axis.ticks = element_blank()) + # Centre plot title
        scale_fill_brewer(palette = "Dark2") # Color palette
 
-temp2 <- temp %>%
+gp_a_db_wp <- gp_a_db_wp %>%
               filter(Description %in% c(1990:2020))
 
-ggplot(temp2, aes(x=Description , y= Value, fill= Network)) +
+ggplot(gp_a_db_wp, aes(x=Description , y= Value, fill= Network)) +
        geom_bar(stat= "identity", width = .6) +
        coord_flip() +
        labs(title="Wood Poles") +
@@ -430,33 +496,34 @@ ggplot(temp2, aes(x=Description , y= Value, fill= Network)) +
              axis.ticks = element_blank()) + # Centre plot title
        scale_fill_brewer(palette = "Dark2") # Color palette
 
-# Concrete Poles
-rm(temp); rm(temp2)
-concrete_pole_age <- database_13_18 %>%
-                     filter(Section %in% "9b: Asset Age Profile",
-                            Subcategory %in% "Concrete poles / steel structure")
+## Concrete Poles
+
+# The same problem of the SAIDI/SAIFI causes.
+# Due to of variables number I will save this in a separated dataset.
+
+type_desc <- db_raw %>% 
+       filter(Section %in% "9b: Asset Age Profile",
+              Subcategory %in% "Concrete poles / steel structure",
+              !Description %in% c("Data accuracy (1-4)","Items at end of year (quantity)","Total assets at year end")) %>%
+       count(Description)
+
+type_desc$Description <- gsub(pattern = "Number of assets at disclosure year end by installation date - ",replacement = "",x = type_desc$Description,ignore.case = FALSE)
 
 
-temp <- concrete_pole_age %>%
-       select(EDB,Network, Observation_year,Description,Value) %>%
-       filter(EDB %in% "Aurora Energy",
-              !Description %in% c("Data accuracy (1-4)","Items at end of year (quantity)"))
 
-temp$Description <- gsub(pattern = "Number of assets at disclosure year end by installation date - ",replacement = "",x = temp$Description,ignore.case = FALSE)
+db_cp <- db_raw %>% 
+       filter(Section %in% "9b: Asset Age Profile",
+              Subcategory %in% "Concrete poles / steel structure",
+              !Description %in% c("Data accuracy (1-4)","Items at end of year (quantity)","Total assets at year end"))
 
-temp <- temp %>%
-       filter(!Network %in% "All",
-              !Description %in% "Total assets at year end")
+rm(type_desc)
 
-for (i in 1:nrow(temp))
-{
-       if (temp[i,2] == "Central Otago")
-       {
-              temp[i,5] <- temp[i,5] * (-1)
-       }
-}
+## Graphs                 
 
-ggplot(temp, aes(x=Description , y= Value, fill= Network)) +
+gp_a_db_cp <- db_cp %>% select(EDB,Network,Description,Year,Value) %>% 
+       filter(EDB %in% "Aurora Energy", Year %in% "2017", !Network %in% "All")
+
+ggplot(gp_a_db_cp, aes(x=Description , y= Value, fill= Network)) +
        geom_bar(stat= "identity", width = .6) +
        coord_flip() +
        labs(title="Wood Poles") +
@@ -465,10 +532,10 @@ ggplot(temp, aes(x=Description , y= Value, fill= Network)) +
              axis.ticks = element_blank()) + # Centre plot title
        scale_fill_brewer(palette = "Dark2") # Color palette
 
-temp2 <- temp %>%
+gp_a_db_cp <- gp_a_db_cp %>%
        filter(Description %in% c(1990:2020))
 
-ggplot(temp2, aes(x=Description , y= Value, fill= Network)) +
+ggplot(gp_a_db_cp, aes(x=Description , y= Value, fill= Network)) +
        geom_bar(stat= "identity", width = .6) +
        coord_flip() +
        labs(title="Wood Poles") +
@@ -478,455 +545,308 @@ ggplot(temp2, aes(x=Description , y= Value, fill= Network)) +
        scale_fill_brewer(palette = "Dark2") # Color palette
 
 
-      ### 5.10.2. Capacitor Banks ####
-bc <- database_13_18 %>%
-              select(everything()) %>%
-                     filter(Section %in% "9a: Asset Register",
-                            Category %in% "All - Capacitor Banks")
+       ### 5.10.2. Capacitor Banks ####
 
-            ##### 5.10.2.1. Capacitor Banks in Aurora Energy ####
-aurora_bc_changes <- bc %>%
-       select(EDB,Network,Observation_year,Description,Value) %>%
-              filter(EDB %in% "Aurora Energy" ,
-                     Description %in% "Net change")
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "All - Capacitor Banks",
+                                    Description %in% "Items at end of year (quantity)") %>%
+                             select(a_bc= Value)
+                     )
 
-aurora_bc <- bc %>% select(EDB,Network,Observation_year,Description,Value) %>%
-       filter(EDB %in% "Aurora Energy" ,
-              Description %in% "Items at end of year (quantity)")
+       ### 5.10.3. Voltage Regulator ####
 
-               ###### 5.10.2.1.a. Graphs and tables #####
-# There was no new capacitor banks
-aurora_bc_changes %>% select(Network,Observation_year,Value) %>%filter(Network %in% "All")
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "HV - Distribution Transformer",
+                                    Subcategory %in% "Voltage regulators",
+                                    Description %in% "Items at end of year (quantity)") %>%
+                                          select(a_vr= Value)
+                     )
 
-# Where did they are
-aurora_bc %>% select(Network,Observation_year,Value) %>%filter(Network %in% "Dunedin")
+       ### 5.3.1. Network Length ####
 
-         #### 5.10.3. Voltage Regulator ####
-vr <- database_13_18 %>%
-              select(everything()) %>%
-                     filter(Section %in% "9a: Asset Register",
-                            Category %in% "HV - Distribution Transformer",
-                            Subcategory %in% "Voltage regulators")
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Subcategory %in% "Total circuit length (km)",
+                                    Description %in% "Total circuit length (for supply)") %>%
+                                          select(a_li= Value)
+                     )
 
-            ##### 5.10.3.1. Voltage Regulator in Aurora Energy ####
+       ### 5.3.1.1. Street lighting ####
 
-# Change in quantity
-aurora_vr_changes <- vr %>%
-                     select(EDB,Network,Observation_year,Description,Value) %>%
-                            filter(EDB %in% "Aurora Energy",
-                                   Network %in% "All",
-                                   Description %in% "Net change")
-
-# Voltage Regulator in the end of each year
-aurora_vr <- vr %>%
-                     select(EDB,Network,Observation_year,Description,Value) %>%
-                            filter(EDB %in% "Aurora Energy",
-                                   Network %in% "All",
-                                   Description %in% "Items at end of year (quantity)")
-
-               ###### 5.10.3.1.a. Graphs and tables ####
-
-# Table
-aurora_vr_table <- cbind(vr %>%
-                     select(EDB,Network,Observation_year,Description,Value) %>%
-                            filter(EDB %in% "Aurora Energy",
-                                   Network %in% "Central Otago",
-                                   Description %in% "Items at end of year (quantity)") %>%
-                            select(Observation_year),
-                     vr %>%
-                     select(EDB,Network,Observation_year,Description,Value) %>%
-                            filter(EDB %in% "Aurora Energy",
-                                   Network %in% "Central Otago",
-                                   Description %in% "Items at end of year (quantity)") %>%
-                                          select(Value),
-                     vr %>%
-                     select(EDB,Network,Observation_year,Description,Value) %>%
-                            filter(EDB %in% "Aurora Energy",
-                                   Network %in% "Dunedin",
-                                   Description %in% "Items at end of year (quantity)") %>%
-                                          select(Value),
-                    vr %>%
-                           select(EDB,Network,Observation_year,Description,Value) %>%
-                           filter(EDB %in% "Aurora Energy",
-                                  Network %in% "All",
-                                  Description %in% "Items at end of year (quantity)") %>%
-                           select(Value))
-
-colnames(aurora_vr_table) <- c("Year","Central Otago","Dunedin","All")
-
-
-      ### 5.3.1. Network Length ####
-dt_length <- Filtering(x = database_13_18,
-                       EDB_ = "",
-                       Network_ = "",
-                       Disclosure_year_ = "",
-                       Schedule_ = "",
-                       Schedule_reference_ = "",
-                       Section_ = "",
-                       Category_ = "",
-                       Subcategory_ = "Total circuit length (km)",
-                       Description_ = "Total circuit length (for supply)",
-                       Observation_year_ = "",
-                       Forecast_year_ = "",
-                       Units_ = "",
-                       Value_ = "",
-                       Text_input_ = "")
-
-         #### 5.3.1.1. Network by Regions in Aurora Energy ####
-rm(temp);rm(temp1);rm(temp2);rm(temp3)
-
-# Subsetting dt_length
-aurora_length <- dt_length %>%
-       select(EDB, Network, Observation_year, Value) %>%
-       filter(EDB %in% "Aurora Energy") %>%
-       arrange(Observation_year, Network)
-
-aurora_length_by_network <- cbind(Year = unique(aurora_length$Observation_year),
-                                   aurora_length %>%
-                                          select(Observation_year,Network,Value) %>%
-                                          filter(Network %in% "Central Otago") %>%
-                                          arrange(Observation_year, Network) %>%
-                                          select(Value),
-                                   
-                                   aurora_length %>%
-                                          select(Observation_year,Network,Value) %>%
-                                          filter(Network %in% "Dunedin") %>%
-                                          arrange(Observation_year, Network) %>%
-                                          select(Value),
-                                   
-                                   
-                                   aurora_length %>%
-                                          select(Observation_year,Network,Value) %>%
-                                          filter(Network %in% "All") %>%
-                                          arrange(Observation_year, Network) %>%
-                                          select(Value)
-                                   )
-
-colnames(aurora_length_by_network) <- c("Year","Central_Otago","Dunedin","All")
-
-## Aurora Length by Network and in Percentage
-aurora_length_by_network_perc <- cbind(Year = aurora_length_by_network[,1],
-                                      "Central Otago" =100*aurora_length_by_network[,2]/(aurora_length_by_network[,2]+aurora_length_by_network[,3]),
-                                      "Dunedin" = 100*aurora_length_by_network[,3]/(aurora_length_by_network[,2]+aurora_length_by_network[,3]))
-
-## Graphs
-rm(temp);rm(temp1);rm(temp2);rm(temp3)
-aurora_length_by_network_2 <- dt_length %>%
-                                   select(EDB, Network, Observation_year, Value) %>%
-                                   filter(EDB %in% "Aurora Energy", !Network %in% "All") %>%
-                                   arrange(Observation_year, Network)
-
-## Graph all Aurora Length
-gp_aurora_length <-ggplot(aurora_length_by_network, aes(x= Year, y = All , fill= "tomato3") )+
-       geom_bar(width = .5, stat = "identity")
-
-## Graph network comparing
-gp_aurora_network_compare_trend <- ggplot(aurora_length_by_network_2,aes(x=Observation_year, y=Value,fill=Network))
-gp_aurora_network_compare_trend <- gp_aurora_network_compare_trend + geom_bar(position = position_dodge() , stat = "identity") +
-                                                        scale_fill_brewer(palette = "Paired")
-
-         #### 5.3.1.1. Street lighting ####
-dt_street <- database_13_18 %>%
-                     filter(Section %in% "9a: Asset Register",
-                            Category %in% "LV - LV Street lighting")
-
-            ##### 5.2.1.1.a. Street lighting in Aurora Energy ####
-aurora_dt_street <- dt_street %>%
-                            select(EDB, Network,Description,Observation_year,Value) %>%
-                                   filter(EDB %in% "Aurora Energy",
-                                          !Network %in% "All",
-                                          Description %in% "Items at end of year (quantity)")
-## gp_aurora_street_lighting
-gp_aurora_street_lighting <- ggplot(aurora_dt_street,aes(x=Observation_year, y=Value,fill=Network)) +
-                                          geom_bar(position = position_dodge() , stat = "identity") +
-                                                        scale_fill_brewer(palette = "Paired")
-
-
-
-
-         #### 5.3.1.2. LV Line ####
-dt_lv_line <- database_13_18 %>%
-       filter(Section %in% "9a: Asset Register",
-              Category %in% "LV - LV Line")
-
-            ##### 5.2.1.2.a. LV Line in Aurora Energy ####
-aurora_dt_lv_line <- dt_lv_line %>%
-       select(EDB, Network,Description,Observation_year,Value) %>%
-       filter(EDB %in% "Aurora Energy",
-              Network %in% "All",
-              Description %in% "Items at end of year (quantity)")
-
-         #### 5.3.1.3. LV Cable ####
-       dt_lv_cable <- database_13_18 %>%
-              filter(Section %in% "9a: Asset Register",
-                     Category %in% "LV - LV Cable")
-       
-            ##### 5.2.1.3.a. LV Cable in Aurora Energy ####
-       aurora_dt_lv_cable <- dt_lv_cable %>%
-              select(EDB, Network,Description,Observation_year,Value) %>%
-              filter(EDB %in% "Aurora Energy",
-                     Network %in% "All",
-                     Description %in% "Items at end of year (quantity)")
-       
-       
-       cbind(Year = aurora_dt_street$Observation_year,
-              Street = aurora_dt_street$Value,
-             "LV Line" = aurora_dt_lv_line$Value,
-             "LV Cable" = aurora_dt_lv_cable$Value,
-             "Total LV" = aurora_dt_street$Value + aurora_dt_lv_line$Value + aurora_dt_lv_cable$Value)
-       
-       
-       
-
-         #### 5.3.1.4. HV Distribution Lines <<<< ===================================================== ####
-dt_hv_lines <- database_13_18 %>%
-              filter(Section %in% "9a: Asset Register",
-                     Category %in% "HV - Distribution Line")
-       
-aurora_dt_hv_lines  <- dt_hv_lines %>%
-                            select(EDB, Network, Observation_year, Subcategory,Description, Value) %>%
-                                   filter(EDB %in% "Aurora Energy",
-                                          Network %in% "All",
-                                          Subcategory %in% "Distribution OH Open Wire Conductor",
-                                          Description %in% "Items at end of year (quantity)")
-       
-         #### 5.3.1.5. HV Subtransmission Lines <<<< ===================================================== ####
-dt_sub_lines <- database_13_18 %>%
-       filter(Section %in% "9a: Asset Register",
-              Category %in% "HV - Subtransmission Line")
-
-aurora_dt_sub_lines  <- dt_sub_lines %>%
-       select(EDB, Network, Observation_year, Subcategory,Description, Value) %>%
-       filter(EDB %in% "Aurora Energy",
-              Network %in% "All",
-              Subcategory %in% "Subtransmission OH up to 66kV conductor",
-              Description %in% "Items at end of year (quantity)")
-
-         #### 5.3.1.6. HV Distribution Cables <<<< ===================================================== ####
-dt_hv_cables <- database_13_18 %>%
-       filter(Section %in% "9a: Asset Register",
-              Category %in% "HV - Distribution Cable")
-
-aurora_dt_hv_cables  <- dt_hv_cables %>%
-       select(EDB, Network, Observation_year, Subcategory,Description, Value) %>%
-       filter(EDB %in% "Aurora Energy",
-              Network %in% "All",
-              Description %in% "Items at end of year (quantity)")
-
-         #### 5.3.1.7. HV Subtransmission Cables <<<< ===================================================== ####
-dt_sub_cables <- database_13_18 %>%
-       filter(Section %in% "9a: Asset Register",
-              Category %in% "HV - Subtransmission Cable")
-
-aurora_dt_sub_cables  <- dt_sub_cables %>%
-       select(EDB, Network, Observation_year, Subcategory,Description, Value) %>%
-       filter(EDB %in% "Aurora Energy",
-              Network %in% "All",
-              Description %in% "Items at end of year (quantity)")
-
-      #### 5.3.1.1. Length of Circuit with Tree Management ####
-dt_line_tree_manage <- database_13_18 %>%
-       filter(Section %in% "9c: Overhead lines and underground cables",
-              Category %in% "Overhead circuit requiring vegetation management",
-              Subcategory %in% "Circuit length (km)")
-
-         ##### 5.3.1.1.a. Length of Circuit with Tree Management in Aurora ####
-aurora_dt_line_tree_manage <- cbind(
-                                   dt_line_tree_manage %>%
-                                          select(EDB,Network,Observation_year,Value) %>%
-                                          filter(Network %in% "Central Otago") %>%
-                                          arrange(-Observation_year) %>%
-                                          select(Observation_year, Value),
-                                   
-                                   dt_line_tree_manage %>%
-                                          select(EDB,Network,Observation_year,Value) %>%
-                                          filter(Network %in% "Dunedin") %>%
-                                          arrange(-Observation_year) %>%
-                                          select(Value),
-                                          
-                                   dt_line_tree_manage %>%
-                                          select(EDB,Network,Observation_year,Value) %>%
-                                          filter(EDB %in% "Aurora Energy",Network %in% "All", !Observation_year %in% c(1:2014) ) %>%
-                                          arrange(-Observation_year) %>%
-                                          select(Value)
-                                   )
-
-colnames(aurora_dt_line_tree_manage) <- c("Year","Central Otago","Dunedin","All")
-
-
-#### 5.3.1.1. Length of Circuit within 10km of coastline or geothermal areas ####
-dt_line_coast <- database_13_18 %>%
-       filter(Section %in% "9c: Overhead lines and underground cables",
-              Category %in% "Length of circuit within 10km of coastline or geothermal areas (where known)",
-              Subcategory %in% "Circuit length (km)")
-
-##### 5.3.1.1.a. Length of Circuit within 10km of coastline or geothermal areas in Aurora Energy ####
-aurora_dt_line_coast <- cbind(
-
-
-dt_line_coast %>%
-       select(EDB, Network,Observation_year,Value) %>%
-              filter(EDB %in% "Aurora Energy" , Network %in% "Central Otago") %>%
-                     arrange(-Observation_year,Network) %>%
-                            select(Observation_year,Value),
-
-dt_line_coast %>%
-       select(EDB, Network,Observation_year,Value) %>%
-       filter(EDB %in% "Aurora Energy" , Network %in% "Dunedin") %>%
-       arrange(-Observation_year,Network) %>%
-       select(Value),
-
-dt_line_coast %>%
-       select(EDB, Network,Observation_year,Value) %>%
-       filter(EDB %in% "Aurora Energy" , Network %in% "All" , !Observation_year %in% c(1:2014)) %>%
-       arrange(-Observation_year,Network) %>%
-       select(Value)
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "LV - LV Street lighting",
+                                    Description %in% "Items at start of year (quantity)") %>%
+                                          select(a_li_st= Value)
 )
 
-colnames(aurora_dt_line_coast) <- c("Year","Central Otago","Dunedin","All")
+       ### 5.3.1.2. LV Line ####
+
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "LV - LV Line",
+                                    Description %in% "Items at start of year (quantity)") %>%
+                             select(a_lv_li= Value)
+                     )
+
+       ### 5.3.1.3. LV Cable ####
+
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "LV - LV Cable",
+                                    Description %in% "Items at start of year (quantity)") %>%
+                             select(a_lv_cb= Value)
+                     )
+
+       ### 5.2.1.3.a. LV Cable in Aurora Energy <================ (REMOVE - Put on the Report body) ####
+
+au_tb_lv_cb <-   spread(db_neat %>%                                    # x = db_neat
+                               filter(EDB %in% "Aurora Energy") %>%    # key = Network
+                               select(Network,Year,a_lv_cb),           # value = a_lv_cb
+                        Network,a_lv_cb)
+
+       ### 5.2.1.3.a. Comparasion LV-LV Lines, Cables. and Street Lighting in Aurora <===== (REMOVE - Put on the Report body) ####
+
+au_tb_li_cb_st <- db_neat %>% select(EDB,
+                                        Network,
+                                        Year,
+                                        "LV Lines" = a_lv_li,
+                                        "LV Cables" = a_lv_cb,
+                                        "Street Light" = a_li_st) %>%
+                                          filter(EDB %in% "Aurora Energy")
+
+       ### 5.3.1.4. HV Distribution Lines ####
+
+## HV Lines
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "HV - Distribution Line",
+                                    Subcategory %in% "Distribution OH Open Wire Conductor",
+                                    Description %in% "Items at start of year (quantity)") %>%
+                             select(a_hv_li_oh= Value)
+                     )
+
+## SWER - Single Wired with Earth return
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "HV - Distribution Line",
+                                    Subcategory %in% "SWER conductor",
+                                    Description %in% "Items at start of year (quantity)") %>%
+                             select(a_hv_li_swer= Value)
+)
+
+## Aerial Cable Condutor
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "HV - Distribution Line",
+                                    Subcategory %in% "Distribution OH Aerial Cable Conductor",
+                                    Description %in% "Items at start of year (quantity)") %>%
+                             select(a_hv_li_acc= Value)
+)
+
+## Aerial Cable Condutor
+db_neat <- db_neat %>% mutate(a_hv_li = a_hv_li_oh + a_hv_li_swer + a_hv_li_acc) 
+
+       ### 5.3.1.5. HV Subtransmission Lines ####
+
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "HV - Subtransmission Line",
+                                    Subcategory %in% "Subtransmission OH 110kV+ conductor",
+                                    Description %in% "Items at start of year (quantity)") %>%
+                             select(a_hv_sb_li= Value)
+                     )
+
+       ### 5.3.1.6. HV Distribution Cables ####
+
+## XLPE Underground
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "HV - Distribution Cable",
+                                    Subcategory %in% "Distribution UG XLPE or PVC",
+                                    Description %in% "Items at start of year (quantity)") %>%
+                             select(a_hv_cb_xlpe= Value)
+                     )
+
+## PILC Underground
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "HV - Distribution Cable",
+                                    Subcategory %in% "Distribution UG PILC",
+                                    Description %in% "Items at start of year (quantity)") %>%
+                             select(a_hv_cb_pilc= Value)
+)
+
+## Submarine
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "HV - Distribution Cable",
+                                    Subcategory %in% "Distribution Submarine Cable",
+                                    Description %in% "Items at start of year (quantity)") %>%
+                             select(a_hv_cb_sub= Value)
+)
+
+       ### 5.3.1.7. HV Subtransmission Cables ####
+
+# Too many cases in Subcategory. "For" instance to save codes lines.
+# Causes
+type_desc <-  db_raw %>%    filter(Section %in% "9a: Asset Register",
+                                   Category %in% "HV - Subtransmission Cable",
+                                   Description %in% "Items at end of year (quantity)") %>%
+                                          count(Subcategory)
+
+# Creating Acronyms for each Cause
+type_desc <- bind_cols(type_desc,Acronyms = c("sub","ug_110_gas","ug_110_oil","110_pilc","110_xlpe",
+                                              "66_gas","66_oil","66_pilc","66_xlpe"))
+
+# Loop
+for (i in 1:nrow(type_desc))
+{
+       # Save the column names
+       temp <- colnames(db_neat)
+       
+       # Subsetting the raw data and binding with dt_neat
+       db_neat  <- bind_cols(db_neat,
+                             db_raw %>% 
+                                    filter(Section %in% "9a: Asset Register",
+                                           Category %in% "HV - Subtransmission Cable",
+                                           Description %in% "Items at end of year (quantity)",
+                                           Subcategory %in% type_desc[i,1]) %>%
+                                    select(Value)
+       )
+       
+       # Naming the columns
+       colnames(db_neat) <- c(temp,paste("a_",type_desc[i,3],"_hv_sb_",sep = ""))
+}
+
+# Excluding temporaly variable
+rm(type_desc);rm(temp)
+
+       ### 5.3.1.1. Length of Circuit with Tree Management ####
+
+## For some reason I can not explain, two part of the same informations were split in differents filter()
+temp <-bind_rows(db_raw %>%
+                     filter(Section %in% "9c: Overhead lines and underground cables",             #
+                            Category %in% "Overhead circuit requiring vegetation management",     # 175 rows
+                            Subcategory %in% "Circuit length (km)",                               #
+                            Description %in% "Overhead circuit requiring vegetation management"),
+              
+              db_raw %>% filter(Section %in% "9c: Overhead lines and underground cables",         #
+                     Category %in% "Total overhead length",                                       # 20 rows
+                            Subcategory %in% "Circuit length (km)",                               #
+                             Description %in% "Overhead circuit requiring vegetation management")
+                     )
+
+## Ordering to ensure the ideal sequence of row
+temp <- temp %>% arrange(-Year,EDB,Network)
+
+## Copying the value to the db_neat
+db_neat  <- bind_cols(db_neat,
+                      temp %>% 
+                             select(a_li_tree= Value)
+                     )
+
+#Excluding the temporaly variable
+rm(temp)
+
+       ### 5.3.1.1. Length of Circuit within 10km of coastline or geothermal areas ####
+
+## The same problem faced in Tree Management
+temp <-bind_rows(db_raw %>%
+                        filter(Section %in% "9c: Overhead lines and underground cables",                                         #
+                               Category %in% "Length of circuit within 10km of coastline or geothermal areas (where known)",     # 175 rows
+                               Subcategory %in% "Circuit length (km)"),
+                 
+                 db_raw %>% filter(Section %in% "9c: Overhead lines and underground cables",         #
+                                   Category %in% "Total overhead length",                            # 20 rows
+                                   Subcategory %in% "Circuit length (km)",                           #
+                                   Description %in% "Length of circuit within 10km of coastline or geothermal areas (where known)")
+                )
+
+## Ordering to ensure the ideal sequence of row
+temp <- temp %>% arrange(-Year,EDB,Network)
+
+## Copying the value to the db_neat
+db_neat  <- bind_cols(db_neat,
+                      temp %>% 
+                             select(a_li_coge= Value)
+)
+
+#Excluding the temporaly variable
+rm(temp)
 
 
-### 5.2.2. Consumers ####
+       ### 5.2.2. Consumers ####
+
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9a: Asset Register",
+                                    Category %in% "LV - Connections",
+                                    Description %in% "Items at end of year (quantity)") %>%
+                             select(a_lv_con= Value)
+                     )
+
+### 5.X.X. Overhead lines ####
+
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9c: Overhead lines and underground cables",
+                                    Subcategory %in% "Overhead (km)",
+                                    Description %in% "Total circuit length (for supply)") %>%
+                             select(a_li_oh= Value)
+)
+
+### 5.X.X. Underground lines ####  
+
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9c: Overhead lines and underground cables",
+                                    Subcategory %in% "Underground (km)",
+                                    Description %in% "Total circuit length (for supply)") %>%
+                             select(a_li_ug= Value)
+)
+
+### 5.X.X. Rural Overhead lines ####
+
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9c: Overhead lines and underground cables",
+                                    Subcategory %in% "Circuit length (km)",
+                                    Description %in% "Rural") %>%
+                             select(a_li_ru= Value)
+)
+
+### 5.X.X. Urban Overhead lines ####
+
+db_neat  <- bind_cols(db_neat,
+                      db_raw %>% 
+                             filter(Section %in% "9c: Overhead lines and underground cables",
+                                    Subcategory %in% "Circuit length (km)",
+                                    Description %in% "Urban") %>%
+                             select(a_li_ur= Value)
+)
+
+### 5.X.X. Rugged Overhead lines ####
 
 
-
-consumers <- database_13_18 %>%
-                     select(everything()) %>%
-                            filter(Section %in% "9a: Asset Register",
-                                   Category %in% "LV - Connections")
-
-# 6. Aurora Energy - Descriptive ####
-
-   ## 6.1. Proportion of restoration in less or above 3 hours in Aurora Energy ####
-# Less
-temp <- rest_cons_less_3h %>%
-       select(EDB,Network,Observation_year,Value) %>%
-       filter(EDB %in% "Aurora Energy" , Network %in% c("Central Otago","Dunedin"))
-temp <- arrange(.data = temp, Observation_year, Network)
-# Over
-temp1 <- rest_cons_over_3h %>%
-       select(EDB,Network,Observation_year,Value) %>%
-       filter(EDB %in% "Aurora Energy" , Network %in% c("Central Otago","Dunedin"))
-temp1 <- arrange(.data = temp1, Observation_year, Network)
-
-aurora_out_net_less_over_3h <- cbind(temp[,-1],temp1[,4])
-colnames(aurora_out_net_less_over_3h) <- c("Network","Year","less 3h","over 3h")
-
-      ### 6.1.1 Graphs of Interruptions in Aurora ####
-p1 <- ggplot(data = aurora_out_net_less_over_3h,
-             aes(x = aurora_out_net_less_over_3h$`less 3h`,
-                 y= aurora_out_net_less_over_3h$`over 3h`)) +
-       geom_point()
-
-p1 + geom_text_repel(aes(label=aurora_out_net_less_over_3h$Year), size=4) +
-       geom_point(aes(shape=aurora_out_net_less_over_3h$Network), size = 4) +
-       scale_x_continuous(name = "Less 3 hours") +
-       scale_y_continuous(name = "more than 3 hours") +
-       theme(legend.position = "bottom")
-
-
-
-   ## 6.3. Interruptions in Aurora Energy ####
-
-aurora_unplan <- dt_int_unplan %>%
-                     select(EDB, Network, Observation_year, Value) %>%
-                            filter(EDB %in% "Aurora Energy")
-aurora_unplan <- arrange(.data = aurora_unplan,Observation_year,Network)
-colnames(aurora_unplan)[4] <- "Unplanned_Outage"
-
-
-   ## 6.4. Outages Planned and Unplanned  ####
-aurora_unplan_length <- cbind(aurora_unplan,aurora_length[,4])
-
-aurora_unplan_length <- cbind(aurora_unplan_length,ratio = aurora_unplan_length[4]/aurora_unplan_length[5])
-colnames(aurora_unplan_length)[6] <- "ratio"
-
-aurora_plan <- dt_int_plan %>%
-                     select(EDB,Network,Observation_year,Description,Value) %>%
-                            filter(EDB %in% "Aurora Energy" , Description %in% "Class B (planned interruptions on the network)")
-aurora_plan <- aurora_plan %>%
-                     select(EDB,Network,Observation_year,Value)
-aurora_plan <- arrange(.data = aurora_plan, Observation_year, Network)
-
-
-aurora_plan_unplan <- cbind(aurora_unplan,aurora_plan[,4],aurora_unplan[,4]/(aurora_unplan[,4]+aurora_plan[,4]),aurora_plan[,4]/(aurora_plan[,4]+aurora_unplan[,4]))
-colnames(aurora_plan_unplan) <- c("EDB","Network","Year","Unplanned_Outage","Planned","%_Unplanned","%_Planeed")
-
-aurora_plan_unplan_all <- aurora_plan_unplan %>%
-                                   filter(Network %in% "All")
-
-aurora_plan_unplan_dunedin <- aurora_plan_unplan %>%
-                                   filter(Network %in% "Dunedin")
-
-aurora_plan_unplan_central_otago <- aurora_plan_unplan %>%
-                                          filter(Network %in% "Central Otago")
- 
-   ## 6.5. Aurora SAIDI in details ####
-aurora_SAIDI_causes <- SAIDI_causes %>%
-                            select(EDB,Network,Observation_year,Description,Value) %>%
-                                   filter(EDB %in% "Aurora Energy") %>%
-                                          arrange(desc(Observation_year),EDB,Network,Description)
-
-      ### 6.5.1. Graphs ####
-rm(temp);rm(temp1);rm(temp2);rm(temp3)
-temp <- aurora_SAIDI_causes %>%
-       select(EDB,Network,Observation_year,Description,Value) %>%
-              filter(Observation_year %in% 2017, Network %in% "All")
-
-temp1 <- cbind(temp[,1:4],100*temp[,5]/sum(temp[,5]))
-
-# Barplot
-temp2 <- ggplot(temp1, aes(x="SAIDI", y = Value , fill = Description) )+
-              geom_bar(width = 1, stat = "identity")
-temp2
-
-# Pie
-temp3 <- temp2 + coord_polar("y" , start = 0)
-temp3
-
-rm(temp);rm(temp1);rm(temp2);rm(temp3)
-
-   ## 6.6. Aurora SAIFI in details ####
-aurora_SAIFI_causes <- SAIFI_causes %>%
-                            select(EDB,Network,Observation_year,Description,Value) %>%
-                                   filter(EDB %in% "Aurora Energy") %>%
-                                          arrange(desc(Observation_year),EDB,Network,Description)
-
-      ### 6.6.1. Graphs ####
-rm(temp);rm(temp1);rm(temp2);rm(temp3)
-temp <- aurora_SAIFI_causes %>%
-              select(EDB,Network,Observation_year,Description,Value) %>%
-                     filter(Observation_year %in% 2017, Network %in% "All")
-
-temp1 <- cbind(temp[,1:4],100*temp[,5]/sum(temp[,5]))
-
-# Barplot
-temp2 <- ggplot(temp1, aes(x="SAIFI", y = Value , fill = Description) )+
-       geom_bar(width = 1, stat = "identity")
-temp2
-
-# Pie
-temp3 <- temp2 + coord_polar("y" , start = 0)
-temp3
-
-rm(temp);rm(temp1);rm(temp2);rm(temp3)
-
-   ## 6.7. Aurora Poles ####
-rm(temp);rm(temp1);rm(temp2);rm(temp3)
-
-aurora_pole <- poles %>%
-                     select(EDB,Network,Observation_year,Subcategory,Description,Value) %>%
-                            filter(EDB %in% "Aurora Energy")
-
-# Net change of wood poles
-temp1 <- filter(.data = aurora_pole, Network == "All" , Subcategory == "Wood poles" , Description == "Net change")
-
-# Net change of concrete poles
-temp2 <- filter(.data = aurora_pole, Network == "All" , Subcategory == "Concrete poles / steel structure" , Description == "Net change")
-
-rm(temp);rm(temp1);rm(temp2);rm(temp3)
+db_neat <- mutate(db_neat,a_li_rrr = a_li_oh - a_li_ur - a_li_ru)
 
 ```
+
 
 # I. Introduction
 
@@ -942,18 +862,7 @@ X
 
 # III. Document Structure
 
-The documents is very straigthforward, initialy I will describe all the Aurora Energy Network and later I will compare with the other Lines Companies. I also will apply the K-means cluster method to compare in group.
-
-# IV. Summary
-
-1. General Information
-1. Data Sources
-1. Softwares
-2. Descriptive
-3. Competition
-4. Clustering
-5. Analysis
-6. Forescating
+The documents is very straigthforward, initialy I will describe all the Aurora Energy Network, and later I will compare with the other Lines Companies. I also will apply the K-means cluster method to compare in group.
 
 # 1. General Information
 
@@ -963,31 +872,108 @@ All data of this analysis was downloaded in the internet.
 
 * [Commerce Commission Website](https://comcom.govt.nz/regulated-industries/electricity-lines);
 
-* [Aurora Energy Website](http://www.auroraenergy.co.nz/disclosures/).
+* [Aurora Energy Website](http://www.auroraenergy.co.nz/disclosures/)
 
+* [Land Information New Zealand](https://data.linz.govt.nz/layer/51895-otago-075m-rural-aerial-photos-index-tiles-2004-2011/);
+
+* [GeoJSON file](https://exploratory.io/map)
+
+The most of the features on this document is also Open Source and free for use.
 
 ## 1.2. Softwares
 
-To perform this stydies I adopt the RStudio software to develop such document.
+To perform this stydies I adopt the [R Language](https://en.wikipedia.org/wiki/R_(programming_language)), which was created by [Ross Ihaka](https://en.wikipedia.org/wiki/Ross_Ihaka) and [Robert Gentleman](https://en.wikipedia.org/wiki/Robert_Gentleman_(statistician)) both professor of the University of Auckland. The IDE version and R used in this report were:
 
 * R Version 3.5.1 ([Website](https://cran.r-project.org));
 
 * RStudio Version 1.1.456 ([Website](https://www.rstudio.com)).
 
+## 1.3. A briefly introduction about data
+
+Unfornutaly, the dataset provided by ComCom is not a [*tidy dataset*](http://garrettgman.github.io/tidying/), and for this reason, I need to build a new version of data base.
+
 # 2. Descriptive
 
-Aurora Energy is a company located in Otago Province, one of the southest New Zealand's province. The population of this state is about XXXXX inhabitants. Accordlying with the 2018 Annual Report, there are more than XXXX consumers and XXXX kilometres of lines. The company is divided in two network: Central Otago and Dunedin. The former is the most rural and the latter based on coastal occupation where is located the procinve capital.
+Aurora Energy is a company located in Otago Province, one of the southest New Zealand's province. The population of this state is about XXXXX inhabitants. Accordlying with the 2018 Annual Report, there are more than XXXX consumers and XXXX kilometres of lines. The company is divided in two network: CentralOtago and Dunedin. The former is the most rural and the latter based on coastal occupation where is located the province capital.
+
+```{r Map-NZ,echo=FALSE}
+# Plot the Map of NZ with a pin in the Otago Regional
+leaflet(nz_region) %>% # Call the function leaflet() and use the nz_region database.
+       
+       addTiles() %>% # Add the standard tiles from OpenStreet Map
+       
+              addMarkers(lng=169.5444,               # Longitude                #
+                         lat=-45.2704,               # Latitude                 # Add a Pin in Otago Regional
+                         popup="Otago Regional") %>% # message on the Pin       #
+       
+                     addPolygons(color = "blue",       # Border color
+                                 fillColor = "orange", # Regional color
+                                 weight = 0.5,         # Thicker of line border
+                                 highlightOptions = highlightOptions(color = "white",    # Responsive on mouse
+                                                                     weight = 3,         # Thicker of border
+                                                                     bringToFront = TRUE)) %>% 
+       
+                            setView(lng = 169.5444,  # Longitude
+                                    -45.2704,        # Latitude
+                                    zoom = 7) %>%    # Zoom to fit on screen
+       
+                                   addMiniMap() # Add a minimap
+```
 
 In recents news, Aurora Energy was investing to enhance the network since 2017, after a huge investment of 30 millions NZA. For this reason, this simple documents aims to find out which changes this investment bring to the company.
 
 ## 2.1. Distribution Network in Otago
 
-The Otago's state is divided into two macro-grids according with the ComCom document. 
+The Otago's state is divided geographically into two electrical distribution (macro-grids) according with the ComCom document. Although, the lack of information I assume each District compounded by these city:
 
-* Dunedin;
-* Central Otago.
+* Dunedin (Clutha District, Dunedin City, and Waitaki District);
+* Central Otago (Queenstown-Lakes District and CentralOtago District).
 
-In this first analysis I will explore breafly all Assets of Aurora Energy, such as:
+Based on it, the Table 1 represents the consumers of each Division.
+
+```{r consumer-otago-regional,echo=FALSE}
+## Creating Table with Aurora Energy Consumers.
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_lv_con),          #                     # Creating a table
+       key = Network,                                                       #
+       value = a_lv_con) %>%                                                #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Table 1b - Consumers in Aurora Network</h4>", # Table Title
+                                   digits = 2,                                                             # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+The majority of consumer was located in Dunedin, about 62.58% which represent more than 55.000 consumer, and almost 33.000 consumer was settled in Central Otago. The trend in the last 5 year is the Central Otago increasing its participation on the total share, although Dunedin also increase its connnection number. The growth observed in these last 5 years was `r round(100*(88305-84875)/84875,2)`% in Otago Regional, but looking Central Otago separetaly its growth reach `r round(100*(32943-30237)/30237,2)`%. For this reason, the Central Otago could sature your power supply.
+
+The next analysis will be performed based on these division. In this first analysis I will explore breafly all Assets of Aurora Energy::
 
 * Network Length
        * Overhead
@@ -997,6 +983,7 @@ In this first analysis I will explore breafly all Assets of Aurora Energy, such 
 * Poles
        * Wood
        * Concrete or Stell
+       * Aged Poles
 * Transformers
        * 
        * 
@@ -1006,89 +993,1650 @@ In this first analysis I will explore breafly all Assets of Aurora Energy, such 
 
 ### 2.1.1. Lines and Cables
 
-By the *One Page Overview* downloaded at ComCom website, it is not possible to understand how is divided the grid. So, using the database from *Electricity distributors information disclosures 2013 March 2018* the length among these Network are showed in the Table 1.
+By the *One Page Overview* downloaded at ComCom website, it is not possible to understand how is divided the grid. So, using the database from *Electricity distributors information disclosures 2013 March 2018* the length among these Network are showed in the Table 1a and Table 2b.
+
 
 ##### {.tabset}
 
-###### By Kilometer
+###### Table 1a
 
 ```{r table-aurora-network-km,echo=FALSE}
-### Table of network in Aurora
-kable(aurora_length_by_network) %>%
-       kable_styling(bootstrap_options = c("striped", "hover"))
+## Creating Table with Aurora Energy Overhead Lines
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_li),              #                     # Creating a table
+       key = Network,                                                       #
+       value = a_li) %>%                                                 #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Table 1b - Overhead Lines in Aurora Network</h4>", # Table Title
+                                   digits = 2,                                                             # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
 ```
-<center><b>Table 1 - Aurora Energy Network Composition</b></center>
 
-###### By Percentage
 
-```{r table-aurora-network-perc,echo=FALSE}
-### Table of network in Aurora
-kable(aurora_length_by_network_perc) %>%
-       kable_styling(bootstrap_options = c("striped", "hover"))
+###### Table 1b
+
+```{r graph-aurora-network,echo=FALSE}
+## Graph all Aurora Length
+db_neat %>%   filter(EDB %in% "Aurora Energy", !Network %in% "All") %>%
+                     select(EDB,Network,Year,Value = a_li) %>%
+                            ggplot(aes(x= Year, y= Value,fill= Network))+
+                                   geom_bar(stat = "identity",position = "fill")
+
 ```
-<center><b>Table 1 - Aurora Energy Network Composition</b></center>
-</div>
+<center><b>Table 1b - Aurora Energy Network Composition in Percentage</b></center>
 
-For this Table, the most part of Aurora Network is in Central Otago, almost 59% and the rest in Dunedin. Also, it is possible to observe a steadly growth tendence along both Networks as showed in Graphic 1.
-
-##### {.tabset}
-
-###### Graphic 1a - All Network
+###### Graphic 1b
 
 ```{r echo=FALSE}
-gp_aurora_length
-```
-<center><b>Graphic 1a - Aurora Energy Network Composition</b></center>
-
-###### Graphic 1b - Comparing Dunedin and Central Otago
-
-```{r echo=FALSE}
-gp_aurora_network_compare_trend
+## Graph network comparing
+db_neat %>%   filter(EDB %in% "Aurora Energy") %>%
+                     select(EDB,Network,Year,Value = a_li) %>%
+ggplot(aes(x=Year, y=Value,fill=Network)) + 
+       geom_bar(position = position_dodge() , stat = "identity") +
+              scale_fill_brewer(palette = "Paired") +
+              geom_smooth(method = lm, se= FALSE, color= "tomato")
 ```
 G<center><b>Graphic 1b - Aurora Energy Network Composition</b></center>
 
-</div>
+#####
 
-### 2.1.2. Street Lighting
 
-Aurora Energy provide the service of Public Illumination in Otago Region Council. The results found was Dunedin with double of street lighting network than Central Otago.
+
+For this Table, the most part of Aurora Network is in CentralOtago, almost 59% and the rest in Dunedin. Also, it is possible to observe a steadly growth tendence along both Networks as showed in Graphic 1.
+
+### 2.1.2. Overhead and Underground lines
+
+Segmentation of lines into Overhead and Underground
+
 
 ##### {.tabset}
 
-###### Graphic 3a - Comparasion
+###### Table 1
 
-```{r echo=FALSE}
-gp_aurora_street_lighting
+```{r overhead,echo=FALSE}
+## Creating Table with Aurora Energy Overhead Lines
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_li_oh),           #                     # Creating a table
+       key = Network,                                                       #
+       value = a_li_oh) %>%                                                 #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Table 1b - Overhead Lines in Aurora Network</h4>", # Table Title
+                                   digits = 2,                                                             # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
 ```
 
-###### Graphic 3a - Comparasion
+###### Table 2
+
+```{r underground,echo=FALSE}
+## Creating Table with Aurora Energy Underground Lines
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_li_ug),           #                     # Creating a table
+       key = Network,                                                       #
+       value = a_li_ug) %>%                                                 #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Table 1b - Underground Lines in Aurora Network</h4>", # Table Title
+                                   digits = 2,                                                             # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+###### Table 3
+
+```{r ,echo=FALSE}
+# Subsetting the db_neat to filter and select the variables to plot the graph.
+db_neat %>%                               #                           #
+       filter(EDB %in% "Aurora Energy",   # Filtering the dataset     #
+              !Network %in% "All") %>%    #                           # Subsetting the data frame
+              select(Network,                                         #
+                     Year,                                            #
+                     a_li_oh,                                         #
+                     a_li_ug) %>%                                     #
+                     mutate(Value = a_li_oh + a_li_ug) %>% # Calculating the total
+                            select(Network,Year,Value) %>% # Selecting the columns desires
+       
+                            # Plotting the graph
+                            ggplot(aes(x = Year,         # Independent varialble
+                                       y = Value)) +     # Dependet variable 
+              
+                                   # Defining the graph's style
+                                   geom_bar(position = "fill",   # Side by side bars
+                                          stat = "identity",     # Deafult setting
+                                          width = 0.5,           # Bar's Width
+                                          aes(fill = Network))+  # Fill the bars with the Network percentage
+
+                                   labs(x="[years]",  # X axis label
+                                        y="[%]",     # Y axis label
+                                        title="Overhead and Underground Lines comparison in Aurora Energy") # Graph title
+```
+
+
+
+
+#####
+
+
+### 2.1.2. Street Lighting
+
+
+Aurora Energy provide the service of Public Illumination in Otago Region Council. The results found was Dunedin with double of street lighting network than CentralOtago as showed in the Graphic 2, Table 2a, and table 2b.
+
+##### {.tabset}
+
+###### Graphic
+
+```{r gp_li_st,echo=FALSE}
+# Subsetting the db_neat to filter and select the variables to plot the graph.
+db_neat %>%                               #                           #
+       filter(EDB %in% "Aurora Energy",   # Filtering the dataset     #
+              !Network %in% "All") %>%    #                           # Subsetting the data frame
+              select(Network,                                         #
+                     Year,                                            #
+                     Value = a_li_st) %>%                             #
+
+                     # plotting the graph
+                     ggplot(aes(x = Year,         # Independent varialble
+                                y = Value,        # Dependet variable
+                                fill=Network)) +  # 
+       
+                            # Defining the graph's style
+                            geom_bar(position = position_dodge(),  # Side by side bars
+                                     stat = "identity") +          # default setting
+       
+                            scale_fill_brewer(palette= "Paired") + # 
+       
+                                   # Estimating
+                                   geom_smooth(method= lm,           # Method: Linear Model
+                                                 se = FALSE,         # Standard Erros
+                                                 color= "tomato") +  # Line color
+                            labs(x="[years]",  # X axis label
+                                 y="[km]",     # Y axis label
+                                 title="Street Lighting Length in Aurora Energy") # Graph title
+```
+<center><b>Street Lighting Comparison</b></center>
+
+###### Table 2a
 
 ```{r echo=FALSE}
-#Teste
+# Creating Table with Street Lines in Aurora
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_li_st),           #                     # Creating a table
+       key = Network,                                                       #
+       value = a_li_st) %>%                                                 #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Table 1b - Street Lighting Line Length by Network</h4>", # Table Title
+                                   digits = 2,                                                             # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+<center><b>Table 2 - Total Street Lighting in each Network</b></center>
+
+###### Table 2b
+
+```{r ,echo=FALSE}
+## Comparing a specific variable with the global variable.
+bind_cols     (spread(data = db_neat %>%                                   #
+                     filter(EDB %in% "Aurora Energy") %>%   # Filtering    #
+                            select(Network,  #                             # Creating table 1
+                                   Year,     # Selecting                   #
+                                   a_li_st), #                             # Specific
+                     key = Network,                                        #
+                     a_li_st),                                             #
+                     
+              spread(data = db_neat %>%                     # Filtering    #
+                     filter(EDB %in% "Aurora Energy") %>%                  #
+                            select(Network,  #                             # Creating table 2
+                                   Year,     # Selecting                   #
+                                   a_li),    #                             # Global
+                     key = Network,                                        #
+                     a_li) %>%                                             #
+                     
+                     select(CentralOtago_t = CentralOtago,      #
+                            Dunedin_t=Dunedin,                  # Selecting columns
+                            All_t=All)) %>%                     # from table 1 and 2
+       
+       mutate(CentralOtago_p = 100*CentralOtago/CentralOtago_t,  #
+              Dunedin_p = 100*Dunedin/Dunedin_t,                 # Creating the proportion columns
+              All_p = 100*All/All_t) %>%                         #
+              
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_t,  #
+                     CentralOtago_p,  #
+                     Dunedin,         # Rearranging the columns order
+                     Dunedin_t,       #
+                     Dunedin_p,       #
+                     All,             #
+                     All_t,           #
+                     All_p) %>%       #
+                     
+                     arrange(-Year) %>% # Re-ordering the rows.
+
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Street Lighting Line Length by Network</h4>", # Table Title
+                                   digits = 2, # Round the number
+                                   col.names = c("Year",               #
+                                                 "Street [km]",        #
+                                                 "Subtotal [km]",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Street [km]",        #
+                                                 "Subtotal [km]",      #
+                                                 "[%]",                #
+                                                 "Street [km]",        #
+                                                 "Total Network [km]", #
+                                                 "%")) %>%             #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 3, # Nest columns' header
+                                                             "Dunedin" = 3,       # to a "parent"
+                                                             "Total" = 3))        #
+```
+
+<center><b>Total Street Lighting in each Network</b></center>
+
+#####
+
+
+### 2.1.3. Tree Management in Overhead lines
+
+This section show the Network length under Tree Management.
+
+
+##### {.tabset}
+
+###### Graphic 3a
+
+```{r ,echo=FALSE}
+# Subsetting the db_neat to filter and select the variables to plot the graph.
+
+db_neat %>%                               #                           #
+       filter(EDB %in% "Aurora Energy",   # Filtering the dataset     #
+              !Network %in% "All") %>%    #                           # Subsetting the data frame
+              select(Network,                                         #
+                     Year,                                            #
+                     Value = a_li_tree) %>%                           #
+
+                     # plotting the graph
+                     ggplot(aes(x = Year,         # Independent varialble
+                                y = Value,        # Dependet variable
+                                fill=Network)) +  # 
+       
+                            # Defining the graph's style
+                            geom_bar(position = position_dodge(),  # Side by side bars
+                                     stat = "identity") +          # default setting
+       
+                            scale_fill_brewer(palette= "Paired") + # 
+       
+                                   # Estimating
+                                   geom_smooth(method= lm,           # Method: Linear Model
+                                                 se = FALSE,         # Standard Erros
+                                                 color= "tomato") +  # Line color
+                            labs(x="[years]"
+                                 ,y="[km]",
+                                 title="Tree Management in Aurora Energy")
+```
+
+###### Table 3a
+
+
+```{r ,echo=FALSE}
+# Creating a table to the Tree Management Length in Aurora
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_li_tree),         #                     # Creating a table
+       key = Network,                                                       #
+       value = a_li_tree) %>%                                               #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Tree Management Length in Aurora</h4>", # Table Title
+                                   digits = 2,                                            # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+
+###### Obs.:
+
+
+It was necessary perform two searches:
+
+* 2013 and 2014: Section -> 9c: Overhead lines and underground cables, Categgory -> Total overhead length, Sub-category -> Circuit length (km), Description -> Overhead circuit requiring vegetation management
+* 2015, 2016 and 2017: Section -> Overhead lines and underground cables, Category -> Overhead circuit requiring vegetation management, Subcategoryv -> "Circuit length (km)
+
+
+#####
+
+The length of Tree Management in Dunedin kept almost steadly comparing with Central Otago, which has increased `r round(100*(153/79.22-1),2)`% in 5 years.
+
+
+### 2.1.4. Coastal and Geothermal within 10 km
+
+As expected the Central Otago do not have areas affected by the ocean, and also do not have any kilometre in geothermal areas as the number can proof. All length are concentrated in Dunedin Network where is the most populated costal of this Region.
+
+##### {.tabset}
+
+###### Graphic
+
+```{r ,echo=FALSE}
+# Creating a table to the Coastal and Geothermal Areas in Aurora
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_li_coge),         #                     # Creating a table
+       key = Network,                                                       #
+       value = a_li_coge) %>%                                               #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Coastal and Geothermal Area Length in Aurora</h4>", # Table Title
+                                   digits = 2,                                            # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover"),      # Responsive on mouse
+                                                 full_width = F,                      # No full-width
+                                                 position = "float_right") %>%        # Align on right
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+###### Graphic
+
+```{r,echo=FALSE}
+db_neat %>%   select(EDB,Network,Year,a_li_coge) %>% 
+                     filter(EDB %in% "Aurora Energy",Network %in% "Dunedin") %>%
+                            ggplot(aes(x=Year,y=a_li_coge)) +
+                                   geom_bar(stat = "identity") +
+                                   labs(x = "Year",y = "Length in [km]", title = "HELLO WORLD") +
+                                   coord_flip() +
+       theme_classic()  + scale_fill_manual(values=c("#DA7B93", "#2F4454"))+
+                                   theme(axis.title = element_text(size=8))
+```
+
+#####
+
+
+As I expected, there are only lines affected by the ocean salt and by the geothermal activities in the Dunedin Network. These length are increase possibly due to the network expansion. In Brazil, the coastal lines were different from the regular basis, due to the corrosive effect from the salt. There many incidents of electrical discharge the excess of salt on the 13,8 kV pillar isolator, to mitigate this incident they adopt a water jet to wash each isolator for prevent.
+
+<br>
+<br>
+
+
+### 2.1.6. LV Length Lines and Cables
+
+The LV Lines kept steadly around 5 years with a share of `21,5%` in Central Otago and `78,5%` in Dunedin.
+
+```{r,echo=FALSE}
+# Creating a table to the Coastal and Geothermal Areas in Aurora
+
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_lv_li),           #                     # Creating a table
+       key = Network,                                                       #
+       value = a_lv_li) %>%                                                 #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>LV Lines in Aurora Network</h4>",       # Table Title
+                                   digits = 2,                                            # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2,  # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))
+```
+
+
+### 2.1.7. HV Lines Length and Cables
+
+The HV Lines also kept steadly around 5 years with a share of `68,0%` in Central Otago and `32,0%` in Dunedin.
+
+```{r,echo=FALSE}
+# Creating a table to the HV Lines in Aurora
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_hv_li),           #                     # Creating a table
+       key = Network,                                                       #
+       value = a_hv_li) %>%                                                 #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>HV Lines in Aurora Network in Aurora</h4>", # Table Title
+                                   digits = 2,                                            # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2,  # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+### 2.1.8. HV Lines Length Subtransmission
+
+Aurora Energy do not have HV lines to subtransmission as I can see in the table X.
+
+```{r,echo=FALSE}
+# Creating a table to the HV Lines in Aurora
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_hv_sb_li),        #                     # Creating a table
+       key = Network,                                                       #
+       value = a_hv_sb_li) %>%                                              #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>HV Lines in Aurora Network</h4>",       # Table Title
+                                   digits = 2,                                            # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2,  # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+### 2.2.2. Rural Overhead Lines
+
+Almost 74% of Rural Overhead lines in Otago Regional were in Central Otago and 26% in Dunedin.
+
+##### {.tabset}
+
+###### Table
+
+```{r,echo=FALSE}
+# Subsetting the db_neat to create a table of Rural Length Network in Aurora Energy (Only in Overhead Lines)
+# Creating a table to the HV Lines in Aurora
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_li_ru),           #                     # Creating a table
+       key = Network,                                                       #
+       value = a_li_ru) %>%                                                 #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Rural Lines in Aurora Network</h4>",       # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2,  # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+###### Table
+
+```{r,echo=FALSE}
+## Comparing a specific variable with the global variable.
+bind_cols     (spread(data = db_neat %>%                                   #
+                     filter(EDB %in% "Aurora Energy") %>%   # Filtering    #
+                            select(Network,  #                             # Creating table 1
+                                   Year,     # Selecting                   #
+                                   a_li_ru), #                             # Specific
+                     key = Network,                                        #
+                     a_li_ru),                                             #
+                     
+              spread(data = db_neat %>%                     # Filtering    #
+                     filter(EDB %in% "Aurora Energy") %>%                  #
+                            select(Network,  #                             # Creating table 2
+                                   Year,     # Selecting                   #
+                                   a_li_oh), #                             # Global
+                     key = Network,                                        #
+                     a_li_oh) %>%                                          #
+                     
+                     select(CentralOtago_t = CentralOtago,      #
+                            Dunedin_t=Dunedin,                  # Selecting columns
+                            All_t=All)) %>%                     # from table 1 and 2
+       
+       mutate(CentralOtago_p = 100*CentralOtago/CentralOtago_t,  #
+              Dunedin_p = 100*Dunedin/Dunedin_t,                 # Creating the proportion columns
+              All_p = 100*All/All_t) %>%                         #
+              
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_t,  #
+                     CentralOtago_p,  #
+                     Dunedin,         # Rearranging the columns order
+                     Dunedin_t,       #
+                     Dunedin_p,       #
+                     All,             #
+                     All_t,           #
+                     All_p) %>%       #
+                     
+                     arrange(-Year) %>% # Re-ordering the rows.
+
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Rural Line Length in comparison with Overhead Lines</h4>", # Table Title
+                                   digits = 2, # Round the number
+                                   col.names = c("Year",               #
+                                                 "Rural [km]",         #
+                                                 "Overhead [km]",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Rural [km]",         #
+                                                 "Overhead [km]",      #
+                                                 "[%]",                #
+                                                 "Rural [km]",         #
+                                                 "Total Overhead [km]", #
+                                                 "[%]")) %>%             #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,                 #
+                                                             "Central Otago" = 3,      # Nest columns' header
+                                                             "Dunedin" = 3,            # to a "parent"
+                                                             "Otago Regional" = 3))    #
+```
+
+#####
+
+More than 85% of the network in CentralOtago was in Rural Area.
+
+More than 37% of the Dunedin was in Rural Area.
+
+
+### 2.2.3. Urban Overhead Lines
+
+##### {.tabset}
+
+###### Table
+
+```{r,echo=FALSE}
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_li_ur),           #                     # Creating a table
+       key = Network,                                                       #
+       value = a_li_ur) %>%                                                 #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Urban Lines in Aurora Network</h4>",       # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2,  # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+###### Table
+
+```{r,echo=FALSE}
+## Comparing a specific variable with the global variable.
+bind_cols     (spread(data = db_neat %>%                                   #
+                     filter(EDB %in% "Aurora Energy") %>%   # Filtering    #
+                            select(Network,  #                             # Creating table 1
+                                   Year,     # Selecting                   #
+                                   a_li_ur), #                             # Specific
+                     key = Network,                                        #
+                     a_li_ur),                                             #
+                     
+              spread(data = db_neat %>%                     # Filtering    #
+                     filter(EDB %in% "Aurora Energy") %>%                  #
+                            select(Network,  #                             # Creating table 2
+                                   Year,     # Selecting                   #
+                                   a_li_oh), #                             # Global
+                     key = Network,                                        #
+                     a_li_oh) %>%                                          #
+                     
+                     select(CentralOtago_t = CentralOtago,      #
+                            Dunedin_t=Dunedin,                  # Selecting columns
+                            All_t=All)) %>%                     # from table 1 and 2
+       
+       mutate(CentralOtago_p = 100*CentralOtago/CentralOtago_t,  #
+              Dunedin_p = 100*Dunedin/Dunedin_t,                 # Creating the proportion columns
+              All_p = 100*All/All_t) %>%                         #
+              
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_t,  #
+                     CentralOtago_p,  #
+                     Dunedin,         # Rearranging the columns order
+                     Dunedin_t,       #
+                     Dunedin_p,       #
+                     All,             #
+                     All_t,           #
+                     All_p) %>%       #
+                     
+                     arrange(-Year) %>% # Re-ordering the rows.
+
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Urban Line Length comparison with Overhead Lines</h4>", # Table Title
+                                   digits = 2, # Round the number
+                                   col.names = c("Year",               #
+                                                 "Urban [km]",         #
+                                                 "Overhead [km]", #
+                                                 "[%]",                # Renaming the columns
+                                                 "Urban [km]",         #
+                                                 "Overhead [km]",      #
+                                                 "[%]",                #
+                                                 "Urban [km]",         #
+                                                 "Total Overhead [km]",#
+                                                 "[%]")) %>%             #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,                 #
+                                                             "Central Otago" = 3,      # Nest columns' header
+                                                             "Dunedin" = 3,            # to a "parent"
+                                                             "Otago Regional" = 3))    #
+```
+
+
+#####
+
+Less than 15% of the network in CentralOtago was in Rural Area.
+
+Less than 63% of the Dunedin was in Rural Area.
+
+### 2.2.4. Rugged Overhead Lines
+
+##### {.tabset}
+
+###### Table
+
+
+```{r,echo=FALSE}
+
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_li_rrr),           #                    # Creating a table
+       key = Network,                                                       #
+       value = a_li_rrr) %>%                                                #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Remote and/or Rugged Lines in Aurora Network</h4>", # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2,  # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
 
 ```
 
-###### Graphic 3a - Comparasion
+###### Table
 
-```{r echo=FALSE}
-tb_aurora_dt_street <-  cbind(
-                                   aurora_dt_street %>% select(EDB,Network,Observation_year,Value) %>%
-                                          filter(Network %in% "Dunedin") %>%
-                                          select(Observation_year,Value),
-                                   
-                                   aurora_dt_street %>% select(EDB,Network,Observation_year,Value) %>%
-                                          filter(Network %in% "Central Otago") %>%
-                                          select(Value)
-                            )
+```{r,echo=FALSE}
+## Comparing a specific variable with the global variable.
+bind_cols     (spread(data = db_neat %>%                                   #
+                     filter(EDB %in% "Aurora Energy") %>%   # Filtering    #
+                            select(Network,  #                             # Creating table 1
+                                   Year,     # Selecting                   #
+                                   a_li_rrr),#                             # Specific
+                     key = Network,                                        #
+                     a_li_rrr),                                            #
+                     
+              spread(data = db_neat %>%                     # Filtering    #
+                     filter(EDB %in% "Aurora Energy") %>%                  #
+                            select(Network,  #                             # Creating table 2
+                                   Year,     # Selecting                   #
+                                   a_li_oh), #                             # Global
+                     key = Network,                                        #
+                     a_li_oh) %>%                                          #
+                     
+                     select(CentralOtago_t = CentralOtago,      #
+                            Dunedin_t=Dunedin,                  # Selecting columns
+                            All_t=All)) %>%                     # from table 1 and 2
+       
+       mutate(CentralOtago_p = 100*CentralOtago/CentralOtago_t,  #
+              Dunedin_p = 100*Dunedin/Dunedin_t,                 # Creating the proportion columns
+              All_p = 100*All/All_t) %>%                         #
+              
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_t,  #
+                     CentralOtago_p,  #
+                     Dunedin,         # Rearranging the columns order
+                     Dunedin_t,       #
+                     Dunedin_p,       #
+                     All,             #
+                     All_t,           #
+                     All_p) %>%       #
+                     
+                     arrange(-Year) %>% # Re-ordering the rows.
 
-colnames(tb_aurora_dt_street) <- c("Year","Dunedin","Central Otago")
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Remote and/or Rugged Overhead Lines Comparison</h4>", # Table Title
+                                   digits = 2, # Round the number
+                                   col.names = c("Year",               #
+                                                 "Urban [km]",         #
+                                                 "Overhead [km]", #
+                                                 "[%]",                # Renaming the columns
+                                                 "Urban [km]",         #
+                                                 "Overhead [km]",      #
+                                                 "[%]",                #
+                                                 "Urban [km]",         #
+                                                 "Total Overhead [km]",#
+                                                 "[%]")) %>%             #
 
-tb_aurora_dt_street <- as_tibble(tb_aurora_dt_street)
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,                 #
+                                                             "Central Otago" = 3,      # Nest columns' header
+                                                             "Dunedin" = 3,            # to a "parent"
+                                                             "Otago Regional" = 3))    #
 
-tb_aurora_dt_street <- cbind(tb_aurora_dt_street,All = tb_aurora_dt_street$Dunedin + tb_aurora_dt_street$`Central Otago`)
-
-kable(tb_aurora_dt_street) %>%
-       kable_styling(bootstrap_options = c("striped", "hover"))
 
 ```
 
+## 2.2. Pole
+
+
+
+### 2.2.1. Wood Pole
+
+```{r,echo=FALSE}
+## Wood Pole
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_wp),              #                     # Creating a table
+       key = Network,                                                       #
+       value = a_wp) %>%                                                    #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Wood Poles in Aurora Network</h4>",        # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+#### 2.2.1.2. Aged Poles
+
+
+
+### 2.2.2. Concrete and Steel Pole
+
+```{r ,echo=FALSE}
+## Concrete Pole
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_cp),              #                     # Creating a table
+       key = Network,                                                       #
+       value = a_cp) %>%                                                    #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Concrete Poles in Aurora Network</h4>",    # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+#### 2.2.2.1. Aged Concrete and Steel Pole 
+
+
+
+### 2.2.2. Other types of Pole
+
+```{r ,echo=FALSE}
+## Other type of Pole
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_ot),              #                     # Creating a table
+       key = Network,                                                       #
+       value = a_ot) %>%                                                    #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Concrete Poles in Aurora Network</h4>",    # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+
+## 2.3. Equipments on the grid
+
+
+### 2.3.1. Capacitor Banks
+
+```{r ,echo=FALSE}
+## Quantity of Capacitor Banks
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_bc),              #                     # Creating a table
+       key = Network,                                                       #
+       value = a_bc) %>%                                                    #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Capacitor Banks in Aurora Network</h4>",    # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+### 2.3.2. Voltage Regulator
+
+```{r ,echo=FALSE}
+## Quantity of Voltage Regulator
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,a_vr),              #                     # Creating a table
+       key = Network,                                                       #
+       value = a_vr) %>%                                                    #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Voltage Regulator in Aurora Network</h4>",    # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+### 2.3.3. Switches
+
+
+
+## 2.4. Realiability
+
+Following the ComCom document formatation, I divided my report into Interruptions Planned and Unplanned.
+
+### 2.4.1. Interruptions
+
+```{r,echo=FALSE}
+## Total Interruptions in Aurora Energy
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,r_i_tot),           #                     # Creating a table
+       key = Network,                                                       #
+       value = r_i_tot) %>%                                                 #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Interruptions in Aurora Network</h4>",    # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+#### 2.4.2.1. Planned Interruptions
+
+```{r,echo=FALSE}
+## Total Interruptions in Aurora Energy
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,r_i_pl),            #                     # Creating a table
+       key = Network,                                                       #
+       value = r_i_pl) %>%                                                  #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Planned Interruptions in Aurora Network</h4>",    # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+#### 2.4.2.2. Unplanned Interruptions
+
+```{r,echo=FALSE}
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,r_i_un),            #                     # Creating a table
+       key = Network,                                                       #
+       value = r_i_un) %>%                                                  #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Unplanned Interruptions in Aurora Network</h4>",    # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+#### 2.4.2.3. Less than 3 hours
+
+```{r,echo=FALSE}
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,r_less_3),          #                     # Creating a table
+       key = Network,                                                       #
+       value = r_less_3) %>%                                                #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Interruptions restored in less than 3 hours in Aurora Network</h4>",    # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+#### 2.4.2.4. More than 3 hours
+
+```{r,echo=FALSE}
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,r_more_3),          #                     # Creating a table
+       key = Network,                                                       #
+       value = r_more_3) %>%                                                #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>Interruptions restored in more than 3 hours in Aurora Network</h4>",    # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+### 2.4.2. SAIDI
+
+```{r,echo=FALSE}
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,r_saidi),           #                     # Creating a table
+       key = Network,                                                       #
+       value = r_saidi) %>%                                                 #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>SAIDI Total in Aurora Network</h4>",    # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+#### 2.4.2.1. SAIDI caused by Planned Interruptions
+
+```{r,echo=FALSE}
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,r_pl_saidi),        #                     # Creating a table
+       key = Network,                                                       #
+       value = r_pl_saidi) %>%                                              #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>SAIDI by Planned Interruptions in Aurora Network</h4>",    # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+
+#### 2.4.2.2. SAIDI caused by Unplanned Interruptions
+
+```{r,echo=FALSE}
+spread(data = db_neat %>%                             #                     #
+       filter(EDB %in% "Aurora Energy") %>%           # Subsetting a table  #
+              select(Network,Year,r_un_saidi),        #                     # Creating a table
+       key = Network,                                                       #
+       value = r_un_saidi) %>%                                              #
+       
+       mutate(CentralOtago_p = 100*CentralOtago/All,  # Adding percentage columns
+              Dunedin_p = 100*Dunedin/All) %>%        # 
+                     
+              select(Year,            #
+                     CentralOtago,    #
+                     CentralOtago_p,  # Re-ordering the columns
+                     Dunedin,         #
+                     Dunedin_p,       #
+                     All) %>%         #
+
+                     arrange(-Year) %>%  # Ordering by years (2017 to 2013)
+       
+                            # Plotting the table
+                            kable(align = "c",  # Align the table and content to center 
+                                   caption = "<h4>SAIDI by Unplanned Interruptions in Aurora Network</h4>",    # Table Title
+                                   digits = 2,                                               # Round the number
+                                   col.names = c("Year",               #
+                                                 "Central Otago",      #
+                                                 "[%]",                # Renaming the columns
+                                                 "Dunedin",            #
+                                                 "[%]",                #
+                                                 "Total")) %>%         #
+
+                                   # Adding style to look nice
+                                   kable_styling(bootstrap_options = c("striped",     # Rows alterning color
+                                                                       "hover")) %>%  # Responsive on mouse
+                                          add_header_above(c(" " = 1,             #
+                                                             "Central Otago" = 2, # Nest columns' header
+                                                             "Dunedin" = 2,       # to a "parent"
+                                                             " " = 1))            #
+```
+
+
+
+
+### 2.4.3. SAIFI
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# 3. Aurora Energy Analysis
+
+
+
+# 4. Benchmarking
+
+```{r,echo=FALSE}
+
+teste <- db_neat %>% filter(Network %in% "All") %>% select(a_li)
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+## 4.1. Clusterization
+
+```{r,echo=FALSE}
+
+
+teste <- db_neat %>% filter(Network %in% "All") %>% select(EDB,Network,a_li,a_li_ur,a_li_oh)
+
+teste2 <- kmeans(x = teste[,3:5],centers = 5)
+
+
+teste2 <- bind_cols(as_tibble(teste),C = teste2$cluster)
+
+```
+
+
+
+# 5. Results
+
+
+
+
+# 6. Conclusions

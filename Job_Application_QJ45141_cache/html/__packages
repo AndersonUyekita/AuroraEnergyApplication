@@ -8,3 +8,8 @@ ggthemes
 kableExtra
 rmdformats
 prettydoc
+leaflet
+geojsonio
+sp
+bindrcpp
+tidyr
