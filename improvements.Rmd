@@ -1,0 +1,42 @@
+---
+title: "Improvements"
+author: "Anderson Uyekita"
+date: "16 de outubro de 2018"
+output: html_document
+---
+
+```{r setup,include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries,echo=FALSE,message=FALSE}
+library(kableExtra)
+library(formattable)
+library(dplyr)
+```
+
+## List
+
+- [ ] Create Functions to optimize the report.
+       - SOURCE: https://www.r-bloggers.com/writing-pipe-friendly-functions/
+
+- [ ] Ortography Revision/Spellchecker
+
+```{r echo=FALSE}
+workinprogress <- bind_cols(Chapter = c("General Information",
+                                        "Descriptive Analysis"),
+                            
+                            "Description/Status" = c("OK",
+                                                     "OK"),
+                            
+                            Progress = c(100,
+                                         100))
+
+
+workinprogress %>% mutate(Progress = color_bar("lightgreen")(Progress)) %>%
+
+kable(escape = F) %>%
+kable_styling("hover", full_width = F) %>%
+column_spec(3, width = "3cm")
+```
+
