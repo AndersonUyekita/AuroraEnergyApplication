@@ -580,17 +580,69 @@ db_neat %>% filter(EDB %in% "Aurora Energy",
        
                      mutate(a = s_loss/s_ent_enr) %>% select(a) -> gauge_13
 
+## Unplanned SAIDI
+db_neat %>% filter(EDB %in% "Aurora Energy",
+                   Network %in% "All",
+                   Year %in% 2018) %>%
+       
+                     select(r_un_saidi) ->  gauge_14
 
+round(gauge_14[[1]],0) -> gauge_14
 
+## Unplanned SAIFI
+db_neat %>% filter(EDB %in% "Aurora Energy",
+                   Network %in% "All",
+                   Year %in% 2018) %>%
+       
+                     select(r_un_saifi) ->  gauge_15
 
+round(gauge_15[[1]],2) -> gauge_15
 
+## Unplanned CAIDI
+gauge_16 = gauge_14/gauge_15
 
+round(gauge_16[[1]],2) -> gauge_16
 
+## Unplanned Interruptions
+db_neat %>% filter(EDB %in% "Aurora Energy",
+                   Network %in% "All",
+                   Year %in% 2018) %>%
+       
+                     select(r_i_un) -> gauge_17
 
+round(gauge_17[[1]],0) -> gauge_17
 
+## Planned SAIDI
+db_neat %>% filter(EDB %in% "Aurora Energy",
+                   Network %in% "All",
+                   Year %in% 2018) %>%
+       
+                     select(r_pl_saidi) ->  gauge_18
 
+round(gauge_18[[1]],0) -> gauge_18
 
+## Planned SAIFI
+db_neat %>% filter(EDB %in% "Aurora Energy",
+                   Network %in% "All",
+                   Year %in% 2018) %>%
+       
+                     select(r_pl_saifi) ->  gauge_19
 
+round(gauge_19[[1]],2) -> gauge_19
+
+## Planned CAIFI
+gauge_20 = gauge_18/gauge_19
+
+round(gauge_20[[1]],0) -> gauge_20
+
+## Planned Interruption
+db_neat %>% filter(EDB %in% "Aurora Energy",
+                   Network %in% "All",
+                   Year %in% 2018) %>%
+       
+                     select(r_i_pl) ->  gauge_21
+
+round(gauge_21[[1]],0) -> gauge_21
 
 ```
 
@@ -598,7 +650,7 @@ db_neat %>% filter(EDB %in% "Aurora Energy",
 Reliability {data-navmenu="Panel" data-orientation=rows}
 =================================================================================================================
 
-Row
+Row 
 -------------------------------------------------------------------------------
 
 ### SAIDI (Year)
@@ -610,6 +662,7 @@ gauge(gauge_1, min = 0, max = 83.6, symbol = ' min', gaugeSectors(
 ```
 
 ### SAIFI (Year)
+
 ```{r}
 gauge(gauge_2, min = 0, max = 1.37, gaugeSectors(
   success = c(0, 1.37 * 1/4 - 0.0001), warning = c(1.37 * 1/4, 1.37 * 2/4 - 0.0001), danger = c(1.37 * 2/4, 1.37)
@@ -638,7 +691,77 @@ valueBox(
 Row
 -------------------------------------------------------------------------------
 
+### Unplanned SAIDI (Year)
 
+```{r}
+gauge(gauge_14, min = 0, max = 200, symbol = ' min', gaugeSectors(
+  success = c(0, 83.6 * 1/4 - 0.0001), warning = c( 83.6 * 1/4,  83.6 * 2/4 - 0.0001), danger = c( 83.6 * 2/4,  83.6)
+))
+```
+
+### Unplanned SAIFI (Year)
+```{r}
+gauge(gauge_15, min = 0, max = 1.37, gaugeSectors(
+  success = c(0, 1.37 * 1/4 - 0.0001), warning = c(1.37 * 1/4, 1.37 * 2/4 - 0.0001), danger = c(1.37 * 2/4, 1.37)
+))
+```
+
+### Unplanned CAIDI (Year)
+```{r}
+gauge(gauge_16, min = 0, max = round(86.8/1.37,0), gaugeSectors(
+  success = c(0, 86.8/1.37 * 1/4 -0.0001),
+  warning = c(86.8/1.37 * 1/4, 86.8/1.37 * 2/4 - 0.0001),
+  danger = c(86.8/1.37 * 2/4, 86.8/1.37)
+))
+```
+
+### Unplanned Interruptions (Year)
+
+```{r}
+Interruptions = gauge_17
+valueBox(
+  Interruptions,
+  color = ifelse(Interruptions > (466+391)*0.8 , "warning","primary")
+)
+```
+
+Row
+-------------------------------------------------------------------------------
+
+### Planned SAIDI (Year)
+
+```{r}
+gauge(gauge_18, min = 0, max = 83.6, symbol = ' min', gaugeSectors(
+  success = c(0, 83.6 * 1/4 - 0.0001), warning = c( 83.6 * 1/4,  83.6 * 2/4 - 0.0001), danger = c( 83.6 * 2/4,  83.6)
+))
+```
+
+### Planned SAIFI (Year)
+
+```{r}
+gauge(gauge_19, min = 0, max = 1.37, gaugeSectors(
+  success = c(0, 1.37 * 1/4 - 0.0001), warning = c(1.37 * 1/4, 1.37 * 2/4 - 0.0001), danger = c(1.37 * 2/4, 1.37)
+))
+```
+
+### Planned CAIDI (Year)
+```{r}
+gauge(gauge_20, min = 0, max = round(86.8/1.37,0), gaugeSectors(
+  success = c(0, 86.8/1.37 * 1/4 -0.0001),
+  warning = c(86.8/1.37 * 1/4, 86.8/1.37 * 2/4 - 0.0001),
+  danger = c(86.8/1.37 * 2/4, 86.8/1.37)
+))
+```
+
+### Planned Interruptions (Year)
+
+```{r}
+Interruptions = gauge_21
+valueBox(
+  Interruptions,
+  color = ifelse(Interruptions > (466+391)*0.8 , "warning","primary")
+)
+```
 
 
 Network {data-navmenu="Panel" data-orientation=rows}
@@ -762,15 +885,7 @@ gauge(value = round(100*gauge_13[[1]],2),
 Row
 -------------------------------------------------------------------------------
 
-### Fault rate
 
-```{r}
-valueBox(
-  value = paste(round(100*gauge_4[[1]]/gauge_6[[1]],0),"/100km",sep=""),
-  color = "primary",
-  caption = "Fault rate"
-)
-```
 
 
 

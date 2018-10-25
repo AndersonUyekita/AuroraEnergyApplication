@@ -63,34 +63,110 @@ library(tidyr)
 library(DT)
        
        ## 1.4. Functions ####
-#source(file = "data_manipulation.R", local = FALSE)
+source(file = "data_manipulation.R", local = FALSE)
+source(file = "tablelizator.R", local = FALSE)
+source(file = "db_consumer_group.R", local = FALSE)
+
 
 ```
 
 
-```{r echo=FALSE,include=FALSE,message=FALSE}
-db_raw <- readRDS(file = "~/Workplace/db_raw.rds")
-
-source(file = "data_manipulation.R", local = FALSE)
-source(file = "tablelizator.R", local = FALSE)
 
 
+```{r importing,cache=TRUE,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
+# 2. Importing the database plainsheet from the Electricity Information Disclosure
+# db_raw <- readRDS(file = "~/Workplace/db_raw.rds")
+
+## 2.1. Importing Dataset from ComCom archive 
+db_raw <- read_xlsx(path = "~/Workplace/04-Dataset/Electricity-distributors-information-disclosure-data-20132018-1-October-2018.xlsm", 
+                    sheet = "Database",   # Sheet to be imported
+                    col_names = TRUE)     # Keep theoriginal columns name
+
+## 2.2 Renaming column to remove spaces
+colnames(x = db_raw) <-     c("EDB",
+                              "Network",
+                              "Disclosure_year",
+                              "Schedule",
+                              "Schedule_reference",
+                              "Section",
+                              "Category",
+                              "Subcategory",
+                              "Description",
+                              "Year",
+                              "Forecast_year",
+                              "Units",
+                              "Value",
+                              "Text_input")
+```
+
+```{r load-map,echo=FALSE,cache=TRUE}
+       ## 2.3. Importing the Polygons of New Zealand Regions
+nz_region <- geojsonio::geojson_read("~/Workplace/01-Maps/nz_region.geojson",
+                                      what = "sp")
+
+       ## 2.4. Importing the Polygons of New Zealand Territories
+nz_territories <- geojsonio::geojson_read("~/Workplace/01-Maps/nz_territories.geojson",
+                                      what = "sp")
+```
+
+
+
+```{r data-manipulation,echo=FALSE,include=FALSE,cache=FALSE}
+# 3. Creating a Neaty Data ####
+
+## 3.1. Removing unuseful columns.
+db_raw <- db_raw %>% select(everything(),
+                            -Disclosure_year,
+                            -Schedule,
+                            -Schedule_reference,
+                            -Forecast_year,
+                            -Units,
+                            -Text_input)
+
+## 3.2. Ordering the raw data
+db_raw <- db_raw %>% arrange(-Year,EDB,Network)
+
+## 3.3 Removing the space between column names
+db_raw$Network <- gsub(pattern = " ",
+                       replacement = "",
+                       x = db_raw$Network)
+
+## 3.4. Removing NA
+for (i in 1:(ncol(db_raw)) )
+{
+       # Temporaly variable
+       teste <- db_raw[,i]
+       
+       # Replacing rows with NA by 0
+       teste[is.na(teste),] <- 0
+       
+       # Updating the db_raw
+       db_raw[,i] <- teste
+}
+rm(teste)
+
+# Creating a new database with only EDB, Network, and Year.
+# I used Section, Category, Subcategory, and Description to subset
+# the unique pair EDB and Network.
 db_neat <- db_raw %>% filter(Section %in% "9c: Overhead lines and underground cables",
                              Category %in% "Total overhead length",
                              Subcategory %in% "Circuit length (km)",
                              Description %in% "Total overhead length") %>%
-                                   select(EDB,Network,Year)
+       select(EDB,Network,Year)
 
-db_neat <- data_manipulation(x = db_raw, y = db_neat)
-
-source(file = "db_consumer_group.R", local = FALSE)
-
-db_consumer_group <- db_consumer_group(x = db_raw)
-
-saveRDS(db_neat,"db_neat.rds")
 ```
 
 
+
+```{r echo=FALSE,include=FALSE,message=FALSE}
+
+db_neat <- data_manipulation(x = db_raw, y = db_neat)
+saveRDS(db_neat,"db_neat.rds")
+
+
+db_consumer_group <- db_consumer_group(x = db_raw)
+
+```
 
 # I. Introduction
 
@@ -102,11 +178,6 @@ I encourage the reader to reproduce this document on your computer.  I made a gr
 # II. Sinopsis
 
 Despite the fact, the report is no finished and will be continually updated over the next days,  this first release comes to show, very briefly, the outcomes from an initial study.
-
-
-
-
-
 
 * <a href="https://rpubs.com/AndersonUyekita/QJ45141_dashboard" target="blank">The Aurora Energy Dashboard</a> purpose was to provide a data visualisation of the New Zealand Electricity Market (similar to [NZCC tableau](https://public.tableau.com/profile/commerce.commission.regulation#!/vizhome/Performanceaccessibilitytool-NewZealandelectricitydistributors/Highlevelratios)), furthermore, a complete tool to registry each step of the analysis.
 
@@ -134,7 +205,7 @@ All data for this analysis was available on the internet.
 
 * [GeoJSON file](https://exploratory.io/map)
 
-Also, most of the features of this document are also Open Source and free for use.
+Most of the features of this document are Open Source and free for use.
 
 ## 1.2. Softwares
 
@@ -146,36 +217,67 @@ I performed this studies adopting the [R Language](https://en.wikipedia.org/wiki
 
 ## 1.3. A briefly introduction about data
 
-Unfortunately, the dataset provided by New Zealand Commerce Commission (NZCC) is not a [*tidy dataset*](http://garrettgman.github.io/tidying/) [@Grolemund], and for this reason, I have created a new version of the database so-called neat database.
+Unfortunately, the dataset provided by the New Zealand Commerce Commission (NZCC) is not a [*tidy dataset*](http://garrettgman.github.io/tidying/) according to [@Grolemund], and for this reason, I have created a new version of the database so-called neat database.
 
 One reason to make a great effort to registry all data modification is due to this document must be reproducible, reusable for later improvements implementation (with minors adjustments), and the most important is anyone can update it without much effort (time spent).
 
 # 2. Descriptive Analysis {#chapter2}
 
-In this chapter, I will show a straightforward statistical descriptive without the intention of deep understanding and what drive the results. I only want to know the big picture of the company, what is the trend and the overall rates. For this reason, this chapter is very long and exhaustively. You may want to waived this chapter to the next [chapter](#chapter3), which is richier in analysis.
+In this chapter, I will show a straightforward statistical descriptive without the intention of deep understanding and what drive the results. I only want to know the big picture of the company, what is the trend and the overall rates. For this reason, this chapter is very long and exhaustively. You may want to waived this chapter to the [Chapter 3](#chapter3), which is richier in analysis.
 
 ## 2.1. Distribution Network in Otago
 
 Aurora Energy is a Line company of New Zealand, located majority in Otago Regional and a minor part in Southland Regional. According to the 2018 Annual Report supplies energy to almost 90,000 homes[@AnnualReport2018], which represents more than 89,000 consumers in 6,683 lines kilometres. Geographically, the company share the Otago Regional electricity distribution with OtagoNet and for this reason has two networks: Central Otago and Dunedin. Figure 1, acqured at [@NZCCtableu], shows the concession area of Aurora Energy within Otago Regional and Southland Regional.
 
-#### {.tabset}
+##### {.tabset}
 
-##### Figure 1
+###### Aurora Energy Concession Area
 
-<center>![Figure 1 - Aurora Energy Concession Area](05-Figure/auroraenergy.png)</center>
+<center>
+<img title="Image extracted from 2018 Annual Report" src="05-Figure/ae_map.svg" alt="Aurora Energy Area" width="320" height="320">
+</center>
 
-##### Map
+
+###### New Zealand Map
+
+```{r map-nz,echo=FALSE,cache=TRUE,out.width="100%",fig.height=3}
+# Plot the NZ's Map with a pin in the Otago Regional
+leaflet(nz_region) %>% # Call the function leaflet() and use the nz_region database.
+       
+       addTiles() %>% # Add the standard tiles from OpenStreet Map
+       
+              addMarkers(lng=169.5444,               # Longitude                #
+                         lat=-45.2704,               # Latitude                 # Add a Pin in Otago Regional
+                         popup="Otago Regional") %>% # Message on the Pin       #
+       
+                     addPolygons(color = "blue",       # Border color
+                                 fillColor = "orange", # Regionals color
+                                 weight = 0.5,         # Border line width
+                                 highlightOptions = highlightOptions(color = "white",    # Responsive on mouse
+                                                                     weight = 3,         # Border line width
+                                                                     bringToFront = TRUE)) %>% 
+       
+                            setView(lng = 169.5444,  # Longitude
+                                    -45.2704,        # Latitude
+                                    zoom = 7) %>%    # Zoom to fit on screen
+       
+                                   addMiniMap() # Add a minimap
+```
 
 
+##### {.end}
 
-#### {.end}
+<br>
 
 For the sake of this report, I will name these two regions as: Dunedin Regional and Central Otago Regional.
 
 Due to the outstanding quantity of information to manage and fit, I have created a *mind map* to this report. I will share the outcome of this mind map, which helped me so much.
 
+<center>
 
+<iframe width="90%" height="400" src="https://www.mindomo.com/mindmap/aurora-energy-df2907a8292742ee8f7e1c192781d447" frameborder="0" allowfullscreen>Your browser does not support frames. <a href="https://www.mindomo.com/mindmap/aurora-energy-df2907a8292742ee8f7e1c192781d447" target="_blank">View</a> this map on its original site. It was created using <a href="https://www.mindomo.com" target="_blank">Mindomo</a>.</iframe>
 
+</center>
 
 From now,  the rest of chapter2 will be exclusively about descriptive statistics to produce an in-depth overview of Aurora Energy network, which will support better conclusions and analysis.
 
@@ -9106,545 +9208,13 @@ kable( align = "c",                                               # Align the ta
 
 # 3. Aurora Energy Analysis {#chapter3}
 
-After a extense [Chapter 2](#chapter2), now I have a well constructed database:
+This Chapter will be disclosure in a separated platform, which has features to turn the data interpretation easier understand and also allow the registry of each step of data transformation.
 
-```{r}
-head(db_neat,20)
-```
-
-By the using of this database I will conduct some deep analysis.
-
-
-
-## 3.1. Brainstorm
-
-Aurora Energy has been increasing the market (Energy Delivered) as shown in the table X, but most is due to the increasing number of consumer and the natural increasing of the energy per capita.
-
-```{r echo=FALSE}
-db_neat  %>% filter(Year %in% 2018,
-                     rev_con_tot_ave_co > 0,
-                    rev_con_tot_mwh > 0) %>% mutate(rev_con_tot_ave_co = rev_con_tot_ave_co/1000,
-                                                    rev_con_tot_mwh = rev_con_tot_mwh/1000) %>%
-       
-                     ggplot(aes(x = rev_con_tot_ave_co, y = rev_con_tot_mwh , color = a_li)) + 
-       
-                            geom_point() + 
-       
-                            labs(x = "[no. consumers 000]",
-                                 y = "Total Energy [GWh]") + 
-       
-                            facet_grid(. ~ island) +
-       
-                            geom_smooth(method = "lm")
-```
-
-
-
-```{r echo=FALSE}
-db_neat %>%
-       filter(Network %in% "All") %>%
-       
-              select(EDB,rev_con_tot_mwh,rev_con_tot_ave_co) %>% 
-       
-                     mutate(Value = rev_con_tot_mwh/rev_con_tot_ave_co) %>%
-       
-ggplot(aes(x = Value)) + 
-       geom_histogram()
-```
-
-
-```{r echo=FALSE}
-db_neat %>%
-       filter(Network %in% "All") %>%
-       
-              select(EDB,rev_con_tot_mwh,rev_con_tot_ave_co) %>% mutate(rev_con_tot_mwh = rev_con_tot_mwh/1000) %>%
-       
-ggplot(aes(x = rev_con_tot_mwh)) + 
-       geom_histogram()
-```
-
-
-
-
-
-
-
-
-
-
-
-
-
-#### Network Length and Losses Correlation
-
-Table 1 shows the performance of Aurora Energy in comparison with other Lines Companies. Although Aurora Energy seems has bad result, it is necessary to point out the Total Energy Delivered to ICPs. Losses are directly correlate with Total Energy Entering and Delivered.
-
-Evenmore, it is impossible to ensure all Losses are technical, network length are a good proxy, but could spread and biase the other effects.
-
-##### {.tabset}
-
-###### Table 1 - NZ - Losses vs Network Length
-
-```{r echo=FALSE}
-# Graphic to show the Operational Expenditures
-db_neat %>%
-       filter(Network %in% "All",
-              Year %in% 2018) %>%
-       
-              ggplot(aes(y = s_loss,
-                         x = a_li,
-                         color =  s_tot_enr,
-                         frame = Year)) + 
-              
-                     geom_point() +
-              
-                     geom_smooth(method = "lm") + 
-       
-                     geom_text_repel(aes(label = COD),
-                                     size = 3,
-                                     data = subset(db_neat,
-                                                   COD %in% c("AE","VE","OR","PO","WE") &
-                                                          Network %in% "All" & Year %in% 2018 )) + 
-              
-                     scale_color_gradientn(colours = rainbow(3)) +
-       
-                     labs(x = "Letwork Length [000km]",
-                          y = "Losses [MWh]")
-
-```
-
-###### Table - SN - Losses Vs Network Length
-
-```{r echo=FALSE}
-# Graphic to show the Operational Expenditures 
-db_neat %>%
-       filter(Network %in% "All",
-              Year %in% 2018) %>%
-       
-              ggplot(aes(y = s_loss,
-                         x = a_li,
-                         color =  s_ent_enr )) + 
-              
-                     geom_point() +
-              
-                     geom_smooth(method = "lm") + 
-       
-                     geom_text_repel(aes(label = COD),
-                                     size = 3,
-                                     data = subset(db_neat,
-                                                   COD %in% c("AE","VE","OR","PO","WE") &
-                                                          Network %in% "All" )) + 
-              
-                     facet_grid(. ~ island) + 
-              
-                     scale_color_gradientn(colours = rainbow(3)) +
-       
-                     labs(x = "Letwork Length [000km]",
-                          y = "Losses [MWh]")
-                     
-```
-
-###### Table - South - Losses Vs Network Length
-
-```{r echo=FALSE}
-# Graphic to show the Operational Expenditures 
-db_neat %>%
-       filter(Network %in% "All",
-              Year %in% 2018,
-              island %in% "South") %>%
-       
-              ggplot(aes(y = s_loss,
-                         x = a_li,
-                         color =  s_ent_enr )) + 
-              
-                     geom_point() +
-              
-                     geom_smooth(method = "lm") + 
-       
-                     geom_text_repel(aes(label = COD),
-                                     size = 3,
-                                     data = subset(db_neat,
-                                                   COD %in% c("AE","OR","WE") &
-                                                          Network %in% "All" & island %in% "South" & Year %in% 2018)) + 
-              
-                     scale_color_gradientn(colours = rainbow(3)) +
-       
-                     labs(x = "Letwork Length [000km]",
-                          y = "Losses [MWh]")
-                     
-```
-
-##### {.end}
-
-***************************************************************************************************
-
-#### OPEX - Vegetation Management 
-
-##### {.tabset}
-
-###### Vegetation Managemtn vs Replacement and Renewal
-
-```{r echo=FALSE}
-# Graphic to show the Operational Expenditures 
-db_neat %>%
-       filter(Network %in% "All") %>%
-       
-              ggplot(aes(x = rg_opex_veg_mang ,
-                         y = rg_opex_rou_correc ,
-                         color = rg_opex_a_rep_ren ,
-                         shape = as.factor(Year) )) + 
-              
-                     geom_point() +
-              
-                     geom_text_repel(aes(label = COD),
-                                     size = 3,
-                                     data = subset(db_neat,
-                                                   COD %in% c("AE","VE","OR","PO","WE") &
-                                                          Network %in% "All" )) + 
-              
-                     facet_grid(. ~ island) + 
-              
-                     scale_color_gradientn(colours = rainbow(3)) +
-       
-                     labs(x = "OPEX - Vegetation Management [000$]",
-                          y = "OPEX - Routine and corrective\nmaintenance and inspection [000$]")
-```
-###### Vegetation Managemtn vs Replacement and Renewal
-
-```{r echo=FALSE}
-# Graphic to show the Operational Expenditures 
-db_neat %>%
-       filter(Network %in% "All") %>%
-       
-              ggplot(aes(x = norm_rg_opex_veg_mang ,
-                         y = norm_rg_opex_rou_correc ,
-                         color = norm_rg_opex_a_rep_ren ,
-                         shape = as.factor(Year) )) + 
-              
-                     geom_point() +
-              
-                     geom_text_repel(aes(label = COD),
-                                     size = 3,
-                                     data = subset(db_neat,
-                                                   COD %in% c("AE","VE","OR","PO","WE") &
-                                                          Network %in% "All" )) + 
-              
-                     facet_grid(. ~ island) + 
-              
-                     scale_color_gradientn(colours = rainbow(3)) +
-       
-                     labs(x = "OPEX - Vegetation Management [000$]",
-                          y = "OPEX - Routine and corrective\nmaintenance and inspection [000$]")
-```
-
-##### {.end}
-
-**Conclusions:**
-
-* Comparing Aurora Energy with the other lines companies, Aurora has been increasing the expenditures in Vegetation and in Routine and Corrective Maintenance and Inspection. The point color shows also a low expenditure in Replacement and Renewal.
-
-
-
-Based on the Graphic X, Aurora Energy has been investing in Vegetation Management and Routine and Corrective Maintenence more than the most of the companies (include South and North lines companies). However, this expenditure was not reflecting in the Realibility Index, and it is necessary to normalize the values to measure the efficient.
-
-Normalizing does not change much. Vector still the company who has the greater amount in OPEX.
-
-
-****************************************************************************************************
-
-
-#### Interruptions
-
-##### {.tabset}
-
-###### SAIFI x SAIDI - OPEX
-
-```{r echo=FALSE}
-
-
-db_neat %>% filter(Network %in% "All") %>%
-       select(Year,EDB,COD,island,r_saidi,r_saifi,rg_opex_tot) %>% mutate(r_caidi = r_saidi/r_saifi) %>%
-       
-       ggplot(aes(x = r_saidi , y = r_saifi , color = rg_opex_tot , shape = as.factor(Year))) + 
-       
-              geom_point() +
-       
-              geom_text_repel(aes(label=COD), size = 3 ,data = subset(db_neat,COD %in% c("AE") & Network %in% "All" ) ) + 
-       
-              facet_grid(. ~ island) + 
-       
-              scale_color_gradientn(colours = rainbow(3))
-```
-
-###### Unplanned Interruptions x Unplaneed SAIDI
-
-```{r echo=FALSE}
-# Graphic to show the Operational Expenditures 
-db_neat %>%
-       filter(Network %in% "All") %>%
-       
-              ggplot(aes(x = r_i_un,
-                         y = r_un_saidi,
-                         color =  r_un_saifi,
-                         shape = as.factor(Year) )) + 
-              
-                     geom_point() +
-              
-                     geom_text_repel(aes(label = COD),
-                                     size = 3,
-                                     data = subset(db_neat,
-                                                   COD %in% c("AE","VE","OR","PO","WE") &
-                                                          Network %in% "All" )) + 
-              
-                     facet_grid(. ~ island) + 
-              
-                     scale_color_gradientn(colours = rainbow(3))
-```
-
-###### CAIDI x Year
-
-```{r echo=FALSE}
-db_neat %>% 
-       select(EDB,Year,r_saidi,r_saifi) %>% mutate(r_caidi = r_saidi/r_saifi) %>%
-       
-       ggplot(aes(x = Year , y = r_caidi)) + 
-       
-              geom_point() +
-       
-              geom_smooth(method = "loess")
-```
-
-###### SAIDI x Year
-
-```{r echo=FALSE}
-db_neat %>% 
-       filter(Network %in% "All") %>%
-       
-       ggplot(aes(x = Year , y = r_saidi, fill = EDB)) + 
-       
-              geom_bar(stat = "identity", position = position_dodge()) +
-       facet_grid(Year ~ .)
-```
-
-###### HISTOGRAM
-
-```{r echo=FALSE}
-db_neat %>% 
-       filter(Network %in% "All") %>%
-       
-       ggplot(aes(x = Year ,
-                  y = r_i_tot ,
-                  fill = EDB)) + 
-       
-              geom_bar(stat = "identity" ,
-                       position = position_dodge())
-       
-```
-
-
-
-
-
-
-##### {.end}
-
-
-
-
-
-
-****************************************************************************************************
-
-#### Regulatory
-
-
-##### {.tabset}
-
-###### Log Profit vs RAB Opening
-
-```{r echo=FALSE}
-db_neat %>% filter(Network %in% "All",
-                   Year %in% 2018) %>%
-       
-       ggplot(aes(x = log(rg_pf) , y =  log(rg_rab_open) , shape = as.factor(Year) , color = rg_depr  )) +
-       
-       geom_point() +
-              
-       geom_text_repel(aes(label = COD),
-                            size = 3,
-                            data = subset(db_neat,
-                                          COD %in% c("AE","VE","OR","PO","WE") &
-                                          Network %in% "All" & Year %in% 2018)) + 
-       
-       facet_grid(. ~ island) + 
-              
-                     scale_color_gradientn(colours = rainbow(3)) +
-       
-       labs( x = "Regulatory Profit",
-             y = "RAB Opening Year")
-```
-
-###### RAB/RAB vs Depreciation
-
-```{r echo=FALSE}
-db_neat %>% filter(Network %in% "All",
-                   Year %in% 2018) %>%
-       
-       ggplot(aes(x = rg_depr ,
-                  y = p_rab  ,
-                  shape = as.factor(Year) ,
-                  color =  s_ent_enr  )) +
-       
-       geom_point() +
-              
-       geom_text_repel(aes(label = COD),
-                            size = 3,
-                            data = subset(db_neat,
-                                          COD %in% c("AE","VE","OR","PO","WE") &
-                                          Network %in% "All" & Year %in% 2018)) + 
-
-       
-       labs( x = "RAB Opening Year",
-             y = "RAB Closing Year")
-```
-
-###### RAB/RAB vs Total Regulatory Income
-
-```{r echo=FALSE}
-
-
-db_neat %>% select(EDB,p_rab,rg_rab_open,rg_rab_closed_tot) %>% arrange(p_rab)
-
-db_neat %>% filter(Network %in% "All") %>%
-       
-       ggplot(aes(x = rg_inc_tot ,
-                  y = p_rab  ,
-                  shape = as.factor(Year) ,
-                  color =  rg_pf  )) +
-       
-       geom_point() +
-              
-       geom_text_repel(aes(label = COD),
-                            size = 3,
-                            data = subset(db_neat,
-                                          COD %in% c("AE","VE","OR","PO","WE") &
-                                          Network %in% "All" & Year %in% 2018))
-```
-
-###### Tax Deduction x Tax Additions
-
-```{r echo=FALSE}
-
-
-db_neat %>% select(EDB,p_rab,rg_rab_open,rg_rab_closed_tot) %>% arrange(p_rab)
-
-db_neat %>% filter(Network %in% "All",
-                   Year %in% 2018) %>%
-       
-       ggplot(aes(x = log(rg_tax_add) ,
-                  y = log(rg_tax_ded)  ,
-                  shape = as.factor(Year) ,
-                  color =  rg_pf  )) +
-       
-       geom_point() +
-              
-       geom_text_repel(aes(label = COD),
-                            size = 3,
-                            data = subset(db_neat,
-                                          COD %in% c("AE","VE","OR","PO","WE") &
-                                          Network %in% "All" & Year %in% 2018))
-```
-
-######  CAPEX vs OPEX
-
-```{r echo=FALSE}
-db_neat %>% filter(Network %in% "All") %>%
-       
-       ggplot(aes(y = log(rg_capex_total)  ,
-                  x = log(rg_opex_tot)      ,
-                  color =  rg_pf  ,
-                  shape = as.factor(Year))) +
-       
-       geom_point() +
-              
-       geom_text_repel(aes(label = COD),
-                            size = 3,
-                            data = subset(db_neat,
-                                          COD %in% c("AE","VE","OR","PO","WE") &
-                                          Network %in% "All" & Year %in% 2018)) + 
-
-       labs( y = "CAPEX",
-             x = "OPEX")
-```
-
-######  LOG-LOG - CAPEX vs OPEX
-
-```{r echo=FALSE}
-db_neat %>% filter(Network %in% "All") %>%
-       
-       ggplot(aes(y = log(rg_capex_total)  ,
-                  x = log(rg_opex_tot)      ,
-                  color =  rg_pf  ,
-                  shape = as.factor(Year))) +
-       
-       geom_point() +
-              
-       geom_text_repel(aes(label = COD),
-                            size = 3,
-                            data = subset(db_neat,
-                                          COD %in% c("AE","VE","OR","PO","WE") &
-                                          Network %in% "All"&
-                                                 Year %in% 2018  )) + 
-
-       labs( y = "CAPEX",
-             x = "OPEX")
-```
-
-######  CAPEX vs OPEX
-
-```{r echo=FALSE}
-db_neat %>% filter(Network %in% "All") %>%
-       
-       ggplot(aes(y = rg_capex_total  ,
-                  x = rg_opex_tot      ,
-                  color =  rg_pf  ,
-                  shape = as.factor(Year))) +
-       
-       geom_point() +
-              
-       geom_text_repel(aes(label = COD),
-                            size = 3,
-                            data = subset(db_neat,
-                                          COD %in% c("AE","VE","OR","PO","WE") &
-                                          Network %in% "All"&
-                                                 Year %in% 2018  )) + 
-
-       labs( y = "CAPEX",
-             x = "OPEX")
-```
-
-##### {.end}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+<a href="https://rpubs.com/AndersonUyekita/QJ45141_dashboard" target="blank">Aurora Energy Dashboard</a>
 
 # 4. Benchmarking
 
-The documents is very straigthforward, initialy I will describe all the Aurora Energy Network, and later I will compare with the other Lines Companies. I also will apply the K-means cluster method to compare in group.
-
+On the Aurora Energy Dashboard, there is a complete and commented section to the Clusterization.
 
 ## 4.1. Clusterization
 
@@ -9717,16 +9287,10 @@ ggplot(aes(x = a_li,
 5. Em 2016 aconteceu alguma coisa na estrutura tarifária. Analisando os Annual Comliance de (conferir os mais antigos) 2014 até 2015 os valores de receita (Notional revenues) estava bem parecido, em 2016 houve uma diminuição muito grande. Comparando com os dados da Planilha Database é possível notar um aumento dos non-standard prices. Houve aí uma ruptura do processo daquela época.
 
 
-
-
 # 6. Conclusions
 [@Uekita2017]
 
 # 7. References
-
-
-
-
 
 ## 7.1. Session Info
 

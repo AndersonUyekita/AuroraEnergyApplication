@@ -441,6 +441,772 @@ data_manipulation<- function(x = db_raw,y = db_neat)
        
        db_neat  <- mutate(db_neat, a_pole_tot = a_wp + a_cp + a_ot)
        
+       ## Wood Poles Age
+       
+       db_raw %>% 
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     !Description %in% c("Data accuracy (1-4)","Items at end of year (quantity)","Total assets at year end")) -> temp_wp
+       
+       gsub(x = temp_wp$Description,
+            pattern = "Number of assets at disclosure year end by installation date - ",
+            replacement = "") -> temp_wp$Description
+       
+       
+       gsub(x = temp_wp$Description,
+            pattern = "\r\n",
+            replacement = "") -> temp_wp$Description
+       
+       gsub(x = temp_wp$Description,
+            pattern = "pre-1940",
+            replacement = "1900-1939") -> temp_wp$Description
+       
+       gsub(x = temp_wp$Description,
+            pattern = "Number with age unknown",
+            replacement = "999999") -> temp_wp$Description
+       
+       gsub(x = temp_wp$Description,
+            pattern = "Number with default dates",
+            replacement = "777777") -> temp_wp$Description
+       
+       gsub(x = temp_wp$Description,
+            pattern = "\\D",
+            replacement = "_") -> temp_wp$Description
+       
+       gsub(x = temp_wp$Description,
+            pattern = "999999",
+            replacement = "unknown") -> temp_wp$Description
+       
+       gsub(x = temp_wp$Description,
+            pattern = "777777",
+            replacement = "default_dates") -> temp_wp$Description
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "unknown") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_unknown = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)
+
+       db_neat <- temp_wp %>% filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "default_dates") %>% 
+       
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_def_date = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)       
+       
+       db_neat  <- temp_wp %>%
+              
+                     filter(Section %in% "9b: Asset Age Profile",
+                            Subcategory %in% "Wood poles",
+                            Description %in% "1900_1939") %>%
+                            select(EDB,
+                                   Network,
+                                   Year,
+                                   a_wp_1900_1939 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "1940_1949") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_1940_1949 = Value) %>%
+              
+              left_join(db_neat,.,by = NULL)
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "1950_1959") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) %>% rename(a_wp_1950_1959 = Value)
+       
+       db_neat  <-  temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "1960_1969") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) %>% rename(a_wp_1960_1969 = Value)
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "1970_1979") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) %>% rename(a_wp_1970_1979 = Value)
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "1980_1989") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) %>% rename(a_wp_1980_1989 = Value)
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "1990_1999") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) %>% rename(a_wp_1990_1999 = Value)
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2000") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) %>% rename(a_wp_2000 = Value)
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2001") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2001 =Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)   
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2002") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2002 =Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)      
+       
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2003") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2003 =Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)    
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2004") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2004 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)  
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2005") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2005 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)       
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2006") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2006 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)         
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2007") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2007 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)     
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2008") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2008 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2009") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2009 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2010") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2010 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2011") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2011 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2012") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2012 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2013") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2013 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2014") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2014 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2015") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2015 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2016") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2016 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)    
+       
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2017") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2017 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)  
+       
+       
+       
+       db_neat  <- temp_wp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Wood poles",
+                     Description %in% "2018") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_wp_2018 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)  
+       
+       
+       ## Concrete poles / steel structure Age
+       
+       db_raw %>% 
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     !Description %in% c("Data accuracy (1-4)","Items at end of year (quantity)","Total assets at year end")) -> temp_cp
+       
+       gsub(x = temp_cp$Description,
+            pattern = "Number of assets at disclosure year end by installation date - ",
+            replacement = "") -> temp_cp$Description
+       
+       
+       gsub(x = temp_cp$Description,
+            pattern = "\r\n",
+            replacement = "") -> temp_cp$Description
+       
+       gsub(x = temp_cp$Description,
+            pattern = "pre-1940",
+            replacement = "1900-1939") -> temp_cp$Description
+       
+       gsub(x = temp_cp$Description,
+            pattern = "Number with age unknown",
+            replacement = "999999") -> temp_cp$Description
+       
+       gsub(x = temp_cp$Description,
+            pattern = "Number with default dates",
+            replacement = "777777") -> temp_cp$Description
+       
+       gsub(x = temp_cp$Description,
+            pattern = "\\D",
+            replacement = "_") -> temp_cp$Description
+       
+       gsub(x = temp_cp$Description,
+            pattern = "999999",
+            replacement = "unknown") -> temp_cp$Description
+       
+       gsub(x = temp_cp$Description,
+            pattern = "777777",
+            replacement = "default_dates") -> temp_cp$Description
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "unknown") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_unknown = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)
+       
+       db_neat <- temp_cp %>% filter(Section %in% "9b: Asset Age Profile",
+                                     Subcategory %in% "Concrete poles / steel structure",
+                                     Description %in% "default_dates") %>% 
+              
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_def_date = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)       
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "1900_1939") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_1900_1939 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "1940_1949") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_1940_1949 = Value) %>%
+              
+              left_join(db_neat,.,by = NULL)
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "1950_1959") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) %>% rename(a_cp_1950_1959 = Value)
+       
+       db_neat  <-  temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "1960_1969") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) %>% rename(a_cp_1960_1969 = Value)
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "1970_1979") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) %>% rename(a_cp_1970_1979 = Value)
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "1980_1989") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) %>% rename(a_cp_1980_1989 = Value)
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "1990_1999") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) %>% rename(a_cp_1990_1999 = Value)
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2000") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) %>% rename(a_cp_2000 = Value)
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2001") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2001 =Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)   
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2002") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2002 =Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)      
+       
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2003") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2003 =Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)    
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2004") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2004 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)  
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2005") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2005 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)       
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2006") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2006 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)         
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2007") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2007 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)     
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2008") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2008 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2009") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2009 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2010") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2010 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2011") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2011 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2012") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2012 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2013") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2013 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2014") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2014 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2015") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2015 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL) 
+       
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2016") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2016 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)    
+       
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2017") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2017 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)  
+       
+       db_neat  <- temp_cp %>%
+              
+              filter(Section %in% "9b: Asset Age Profile",
+                     Subcategory %in% "Concrete poles / steel structure",
+                     Description %in% "2018") %>%
+              select(EDB,
+                     Network,
+                     Year,
+                     a_cp_2018 = Value) %>% 
+              
+              left_join(db_neat,.,by = NULL)  
+       
+       
        ### 5.1.1.X Capacitor Banks ####
        
        db_neat  <- bind_cols(db_neat,
