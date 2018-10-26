@@ -110,7 +110,6 @@ nz_territories <- geojsonio::geojson_read("~/Workplace/01-Maps/nz_territories.ge
 ```
 
 
-
 ```{r data-manipulation,echo=FALSE,include=FALSE,cache=FALSE}
 # 3. Creating a Neaty Data ####
 
@@ -8902,14 +8901,13 @@ Most of the Capital Contribution was in Consumer Connection, it means, to connec
 
 ## 2.8. Revenue
 
-
-
+This subchapter divided the Lines Charges into load-group, and whether standard or Non-standard (as a classification by NZCC). 
 
 ### 2.8.1. Lines Charges
 
 Table 70 shows the Target and the Actual amount of Energy delivered to the ICPs.
 
-#### {.tabset}
+##### {.tabset}
 
 ###### Table 70
 
@@ -8963,7 +8961,7 @@ db_raw %>%    filter(EDB %in% "Aurora Energy",
 
 **Conclusions**
 
-* In 6 years only 1 year, Aurora did reach the target.
+* Along 6 years, only one time Aurora did not reach the target.
 
 ****************************************************************************************
 
@@ -9025,7 +9023,7 @@ db_neat %>% filter(EDB %in% "Aurora Energy") %>%
 ###### Graphic 71
 
 ```{r echo=FALSE}
-
+# Subsetting the db_neat
 db_neat %>% filter(EDB %in% "Aurora Energy") %>%
        
                      select(Year,
@@ -9033,25 +9031,28 @@ db_neat %>% filter(EDB %in% "Aurora Energy") %>%
                             "Standard" = rev_con_stand_tot_mwh,
                             "Non-standard" = rev_con_n_stand_tot_mwh) %>%
        
-                            arrange(Network) %>% gather(Description,Value,3:4) %>% mutate(Value = Value/1000) %>%
+       arrange(Network) %>%
+              gather(Description,
+                     Value,3:4) %>%
+                     mutate(Value = Value/1000) %>%
 
-ggplot(aes(x = Year,   # X Axis as Year
-           y = Value,      # Y Axis $
-           fill = Description)) +
-       # Bar Plot
-       geom_bar(stat = "identity") + 
-       labs(x = "[Years]",
-            y = "[GWh]",
-            title = "Asset Relocations") +
-       facet_grid(. ~ Network) +
-       theme(legend.position = "bottom")
+                            ggplot(aes(x = Year,       # X Axis : Year
+                                       y = Value,      # Y Axis : GWh
+                                       fill = Description)) +
+                                   # Setting Bar Plot
+                                   geom_bar(stat = "identity") + 
+                                   labs(x = "[Years]", # X axis label
+                                        y = "[GWh]",   # Y axis label
+                                        title = "Asset Relocations") + # Graph Title
+                                   facet_grid(. ~ Network) + # Faceting
+                                   theme(legend.position = "bottom")  # Legend position
 ```
 
 ##### {.end}
 
 **Conclusions**
 
-* Aurora Energy do not have many non-standard consumers as shown in the Table 70.1. In 2018 the share in Total Energy Delivered was only `r round(100*(10563/1308293),2)`%.
+* Aurora Energy does not have various non-standard consumers as shown in Table 70.1. In 2018 the share in Total Energy Delivered to this load-group was only `r round(100*(10563/1308293),2)`%.
 
 ****************************************************************************************
 
@@ -9064,7 +9065,7 @@ Table 72 shows each Load Group and the number of consumer from 2013 to 2018.
 ###### Table 72
 
 ```{r echo=FALSE}
-
+# The db_consumer_group is a subset of db_raw, only has the number of consumer
 db_consumer_group %>%
        
        filter(Section %in% "8(i): Billed Quantities by Price Component",
@@ -9072,18 +9073,24 @@ db_consumer_group %>%
               !Subcategory %in% "Consumer totals",
               Description %in% "Average no. of ICPs in disclosure year") %>%
               
-              select(Year,Network,Subcategory,Value) %>% spread(key = Year,value = Value) -> table71
+              select(Year,
+                     Network,
+                     Subcategory,
+                     Value) %>% 
+                     
+                     spread(key = Year,
+                            value = Value) -> table71
 
-              table71[,3:9] <- round(table71[,3:9],0) # Rounding the numbers
+              table71[,3:9] <- round(table71[,3:9],0) # Rounding the numbersof columns 3 to 9
 
-
-datatable(data = table71)
+# Printing table as DT.
+datatable(data = table71,caption = "Aurora Energy Consumers")
 ```
 
 ###### Graphic 72.1
 
 ```{r echo=FALSE}
-
+# The db_consumer_group is a subset of db_raw, only has the number of consumer
 db_consumer_group %>%
        
        filter(Section %in% "8(i): Billed Quantities by Price Component",
@@ -9091,11 +9098,14 @@ db_consumer_group %>%
               !Subcategory %in% "Consumer totals",
               Description %in% "Average no. of ICPs in disclosure year") %>%
               
-              select(Year,Network,Subcategory,Value) %>%
+              select(Year,
+                     Network,
+                     Subcategory,
+                     Value) %>%
 
                      # STACKED ####
-                     ggplot(aes(x = Year,   # X Axis as Year
-                                y = Value,      # Y Axis $
+                     ggplot(aes(x = Year,       # X Axis : Year
+                                y = Value,      # Y Axis : Number of ICPs
                                 fill = Subcategory)) +
                             # Bar Plot
                             geom_bar(stat = "identity") + 
@@ -9108,7 +9118,7 @@ db_consumer_group %>%
 ###### Graphic 72.2
 
 ```{r echo=FALSE}
-
+# The db_consumer_group is a subset of db_raw, only has the number of consumer
 db_consumer_group %>%
        
        filter(Section %in% "8(i): Billed Quantities by Price Component",
@@ -9116,11 +9126,14 @@ db_consumer_group %>%
               !Subcategory %in% "Consumer totals",
               Description %in% "Average no. of ICPs in disclosure year") %>%
               
-              select(Year,Network,Subcategory,Value) %>%
+              select(Year,
+                     Network,
+                     Subcategory,
+                     Value) %>%
               
                      # STACKED ####
-                     ggplot(aes(x = Year,   # X Axis as Year
-                                y = Value,      # Y Axis $
+                     ggplot(aes(x = Year,       # X Axis : Year
+                                y = Value,      # Y Axis : Number of ICP
                                 fill = Subcategory)) +
                             # Bar Plot
                             geom_bar(stat = "identity") + 
@@ -9134,7 +9147,7 @@ db_consumer_group %>%
 
 **Conclusions:**
 
-* Altough the typos, it is possible to see a positive trend in Central Otago and a slight positive trend in Dunedin. Aggregating these trends result a global growth of `r round(((88569/83305)-1)*100,2)`% accumulated in 6 years.
+* Although the typos, it is possible to see a positive trend in Central Otago and a slight positive trend in Dunedin. Aggregating these trends result in a global growth of `r round(((88569/83305)-1)*100,2)`% accumulated in 6 years.
 
 ****************************************************************************************
 
@@ -9199,8 +9212,7 @@ kable( align = "c",                                               # Align the ta
 
 **Conclusions:**
 
-* Altough, the global average of consumptions by ICP is increasing ove the years, in Dunedin Regional this ratios was sligthly decreasing, and in inverse way the Central Otago Regional was incrasing.
-
+* Although, the global average of consumptions by ICP is increasing over the years, in Dunedin Regional this ratio was slightly decreasing, and in an inverse way, the Central Otago Regional was increasing.
 
 ****************************************************************************************
 
@@ -9214,7 +9226,7 @@ This Chapter will be disclosure in a separated platform, which has features to t
 
 # 4. Benchmarking
 
-On the Aurora Energy Dashboard, there is a complete and commented section to the Clusterization.
+On the Aurora Energy Dashboard (same of the Chapter 3), there is a complete and commented section to the Clusterization.
 
 ## 4.1. Clusterization
 

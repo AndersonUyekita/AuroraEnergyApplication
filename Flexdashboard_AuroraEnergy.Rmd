@@ -2141,6 +2141,7 @@ ggplotly(lb_p2)
 As expected, the graphic shows a tendence of the losses increasing accordling with the network length.
 
 <hr>
+
 **Conclusions:**
 
 * It is possible to trace a line trend to calculate the coeficients.
@@ -2278,7 +2279,7 @@ ggplot(temp3,aes(x = Description,
                   y = Value,
                  fill = Sample)  ) +
        
-              geom_bar(stat = "identity", position = position_dodge(),) + coord_flip() -> pole_p1
+              geom_bar(stat = "identity", position = position_dodge()) + coord_flip() -> pole_p1
 
 
 pole_p1 + facet_grid(. ~ cluster) -> pole_p1
@@ -2289,7 +2290,54 @@ ggplotly(pole_p1)
 ### 2.
 
 ```{r}
+db_neat %>%  filter(Network %in% "All",
+                    !COD %in% c("VE","PO")) %>%
+       
+       select(cluster,
+              Year,
+              matches("a_cp_")) %>% 
+       
+                     gather(Description,
+                            Value,3:30) %>%
+                     
+                            filter(Value > 0) %>%
+       
+                                   group_by(cluster,
+                                            Year,
+                                            Description) %>%
+                            
+                                          summarise(Value = mean(Value)) %>%
+       
+                                   ungroup() %>% 
+                                   
+                                          filter(Year %in% 2018) %>% mutate(Sample = "Average") -> temp
 
+gsub(temp$Description,pattern = "a_cp_",replacement = "") -> temp$Description
+
+db_neat %>% filter(EDB %in% "Aurora Energy",
+                   Network %in% "All",
+                   Year %in% 2017) %>%  
+       select(cluster,
+              Year,
+              matches("a_cp_")) %>% 
+       
+                     gather(Description,
+                            Value,3:30) %>% mutate(Value = -Value,Sample = "Aurora Energy") -> temp2
+
+gsub(temp2$Description,pattern = "a_cp_",replacement = "") -> temp2$Description
+
+bind_rows(temp,temp2) -> temp3
+
+ggplot(temp3,aes(x = Description,
+                  y = Value,
+                 fill = Sample)  ) +
+       
+              geom_bar(stat = "identity", position = position_dodge()) + coord_flip() -> pole_p2
+
+
+pole_p2 + facet_grid(. ~ cluster) -> pole_p2
+
+ggplotly(pole_p2)
 ```
 
 
