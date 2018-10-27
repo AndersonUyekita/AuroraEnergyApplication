@@ -1,0 +1,15 @@
+base
+readxl
+dplyr
+ggplot2
+ggrepel
+ggfortify
+ggthemes
+kableExtra
+rmdformats
+prettydoc
+leaflet
+sp
+tidyr
+DT
+bindrcpp
