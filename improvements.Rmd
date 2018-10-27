@@ -36,7 +36,7 @@ workinprogress <- bind_cols(Chapter = c("General Information",
 workinprogress %>% mutate(Progress = color_bar("lightgreen")(Progress)) %>%
 
 kable(escape = F) %>%
-kable_styling("hover", full_width = F) %>%
+kable_styling("hover") %>%
 column_spec(3, width = "3cm")
 ```
 
