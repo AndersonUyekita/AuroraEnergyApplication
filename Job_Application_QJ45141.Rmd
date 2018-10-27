@@ -61,6 +61,12 @@ library(leaflet)
 library(sp)
 library(tidyr)
 library(DT)
+library(cluster)
+library(factoextra)
+library(clustertend)
+library(GGally)
+library(FactoMineR)
+
        
        ## 1.4. Functions ####
 source(file = "data_manipulation.R", local = FALSE)
@@ -69,9 +75,6 @@ source(file = "db_consumer_group.R", local = FALSE)
 
 
 ```
-
-
-
 
 ```{r importing,cache=TRUE,echo=FALSE,warning=FALSE,message=FALSE,include=FALSE}
 # 2. Importing the database plainsheet from the Electricity Information Disclosure
@@ -108,7 +111,6 @@ nz_region <- geojsonio::geojson_read("~/Workplace/01-Maps/nz_region.geojson",
 nz_territories <- geojsonio::geojson_read("~/Workplace/01-Maps/nz_territories.geojson",
                                       what = "sp")
 ```
-
 
 ```{r data-manipulation,echo=FALSE,include=FALSE,cache=FALSE}
 # 3. Creating a Neaty Data ####
@@ -154,8 +156,6 @@ db_neat <- db_raw %>% filter(Section %in% "9c: Overhead lines and underground ca
        select(EDB,Network,Year)
 
 ```
-
-
 
 ```{r echo=FALSE,include=FALSE,message=FALSE}
 
@@ -8901,7 +8901,7 @@ Most of the Capital Contribution was in Consumer Connection, it means, to connec
 
 ## 2.8. Revenue
 
-This subchapter divided the Lines Charges into load-group, and whether standard or Non-standard (as a classification by NZCC). 
+This subchapter divides the Lines Charges into load-group, and whether standard or non-standard (as a classification by NZCC). 
 
 ### 2.8.1. Lines Charges
 
@@ -9147,7 +9147,7 @@ db_consumer_group %>%
 
 **Conclusions:**
 
-* Although the typos, it is possible to see a positive trend in Central Otago and a slight positive trend in Dunedin. Aggregating these trends result in a global growth of `r round(((88569/83305)-1)*100,2)`% accumulated in 6 years.
+* Aside from the typos observed in Graphic 72.1, it is possible to see a positive trend in Central Otago and a slight positive trend in Dunedin. Aggregating these trends result in a global growth of `r round(((88569/83305)-1)*100,2)`% accumulated in 6 years.
 
 ****************************************************************************************
 
@@ -9220,15 +9220,354 @@ kable( align = "c",                                               # Align the ta
 
 # 3. Aurora Energy Analysis {#chapter3}
 
-This Chapter will be disclosure in a separated platform, which has features to turn the data interpretation easier understand and also allow the registry of each step of data transformation.
+Due to the type of analysis involving many Graphics, I will use the tool called Flex Dash Board in a separated platform, which can be accessed by the link below.
 
 <a href="https://rpubs.com/AndersonUyekita/QJ45141_dashboard" target="blank">Aurora Energy Dashboard</a>
+
+This tool has several features that allow the data interpretation easier to understand and also allow the analyst to record each step of the data transformation.
 
 # 4. Benchmarking
 
 On the Aurora Energy Dashboard (same of the Chapter 3), there is a complete and commented section to the Clusterization.
 
 ## 4.1. Clusterization
+
+The aim of the clusterization is to find groups in a population with same similarity, but underlying this main objective resides many details, which will be discussed in the next subchapters. The methodology applied in this chapter is based on the book @Kassambara.
+
+## 4.2. Data Preparation
+
+In this step I will choose the variables, scale method and the standardization method.
+
+### 4.2.1. Variables and Observations
+
+The observations of this clusterization is the EDB companies, and the variables selected are:
+
+1. Number of ICPs
+2. Energy Delivered
+3. Lines Charge
+4. Network Length
+5. Losses
+6. SAIDI
+7. SAIFI
+8. Interrupptions
+9. Closing RAB
+10. OPEX
+11. CAPEX
+
+All the calculation will be based on the 2018 values.
+
+```{r echo=FALSE}
+# Subsetting the db_neat to create the db_cluster
+db_cluster <- db_neat %>% 
+       filter(Year %in% 2018,
+              Network %in% "All") %>% # Excluding the Regionals
+              select(EDB,Year,COD,island,
+                     rev_con_tot_ave_co, # 1. Number of ICPs
+                     rev_con_tot_mwh,
+                     r_saidi,
+                     rg_a_com_tot,
+                     rg_tax_income,
+                     r_saifi,
+                     r_un_saidi,
+                     r_un_saifi,
+                     rg_opex_veg_mang,
+                     rg_opex_serv_int,
+                     rg_opex_rou_correc,
+                     r_i_cau_equ_dis_li_exc_lv)
+
+
+db_cluster <- as.data.frame(db_cluster)
+
+rownames(db_cluster) <- db_cluster$COD
+
+
+
+ggcorr(db_cluster[,-c(1:5)],geom = "circle", label = TRUE)
+
+
+```
+
+### 4.2.2. Data Standardization
+
+This step is necessary to make features comparable because many of the variable are in different scales. The Equation (37) shows the method adopetd to perform the standardization.
+
+\begin{equation}
+\small obs_{standard} = \frac{(x_{i} - centre_{i})}{scale(x)}
+\end{equation}
+
+
+$\small
+\begin{array}{l l}
+     obs_{standard}:   & \text{standardizated observation} \\
+     x_{i}:            & \text{observation i} \\
+     y_{i}:            & \text{mean of all x observations}\\
+     scale(x):         & \text{standard deviation of the x observation}\\
+\end{array}$
+
+<br>
+
+The output of this equation is a variable with mean zero and standard deviation one.
+
+```{r echo=FALSE}
+# Standardization
+db_cluster_std <- scale(as.matrix(db_cluster[,-c(1:5)]))
+
+
+PCA(X = db_cluster_std,
+    scale.unit = TRUE,
+    ncp = 3,
+    graph = TRUE)
+
+
+pca_res <- PCA(X = db_cluster_std,
+    scale.unit = TRUE,
+    ncp = 3,
+    graph = FALSE)
+
+
+hcpc_res <- HCPC(pca_res,
+                 min = 2,
+                 max = 10,
+                 graph = FALSE)
+
+
+fviz_dend(hcpc_res,
+          cex = 0.7,
+          palette = "jco",
+          rect = TRUE,
+          rect_border = "jco",
+          rect_fill = TRUE,
+          labels_track_height = 0.8)
+
+fviz_cluster(hcpc_res,
+             repel = TRUE,
+             show.clust.cent = TRUE,
+             palette = "jco",
+             ggtheme = theme_minimal(),
+             main = "Factor Map")
+
+```
+
+### 4.2.3. Observation Distances
+
+I choose the Manhattan method to calculate the distance between observation because this method is less sensitive of unusual values and should give more robust results. The Equation (38) shows the Manhattan method.
+
+\begin{equation}
+\small d_{man}(x,y) = \sum_{i=1}^n|(x_{i} - y_{i})|
+\end{equation}
+
+
+$\small
+\begin{array}{l l}
+     d_{man}:        & \text{Distance between x and y} \\
+     x_{i}:          & \text{} \\
+     y_{i}:          & \text{} \\
+\end{array}$
+
+<br>
+
+The Graphic X shows the output of the VAT (Visual Assessment of Cluster Tendency) method developed by Bezdek and Hathaway (2012).
+
+##### {.tabset}
+
+###### Graphic X
+
+```{r echo=FALSE}
+# Distance calculation
+db_cluster_std_dist <- get_dist(db_cluster_std, method = "manhattan")
+
+fviz_dist(db_cluster_std_dist,
+          show_labels = TRUE) +
+       
+       labs(title = "Dissimilarity Matrix")
+```
+
+The interpretation of the Graphic is:
+
+* Red: high similarity
+* Blue: Low similarity
+
+EDB belonging to the same cluster (group) are shown in consecutive order.
+
+Other approach to assess the Clustering Tendency is using the Hopkins statistic. The Equation () shows the Hopkins Statisc.
+
+\begin{equation}
+\small H = \frac{\sum_{i=1}^n{y_{i}}}{\sum_{i=1}^n{x_{i}}+\sum_{i=1}^n{y_{i}}}
+\end{equation}
+
+
+$\small
+\begin{array}{l l}
+     d_{man}:        & \text{Distance between x and y} \\
+     x_{i}:          & \text{a} \\
+     y_{i}:          & \text{a} \\
+\end{array}$
+
+<br>
+
+The null and the alternative hypotheses are defined below:
+
+* Null hypothesis: the dataset is uniformily distributed;
+* Alternative hypothesis: the dataset is not uniformily distributed,
+
+```{r echo=FALSE}
+# Statistic H
+h <- hopkins(db_cluster_std, n = nrow(db_cluster_std)-1)
+```
+
+If H is close 0.5 means that there are not clusters.
+
+The results of this statistic in the NZ Electricity Market is `r round(h[[1]],2)`, which means there are clusters in this dataset.
+
+## 4.3. Clustering Algorithm
+
+The are several Cluster algorithms in the academic literature, however as an example of cluster application I will adopt the K-medoids method and I will use the PAM (Kaufamn & Rouseeeuw, 1990) algorithm to solve it.
+
+### 4.3.1. PAM Algorithm
+
+This method is more stable than the K-means because the centroid of each clusters is an observation instead of a mean of the cluster. Due to this modification the K-medoids is less sensitive to outliers than K-means.
+
+### 4.3.2. Opitimized Number of Cluster
+
+Unfortunalety, the K-menoids needs as input the number of clusters, however there is a solution calculating the silhouette, as shown in the Graphic X.
+
+##### {.tabset}
+
+###### Graphic X
+
+```{r echo=FALSE}
+# Silhouette Calculationg to Optimized number of cluster
+fviz_nbclust(as.matrix(db_cluster_std), pam, method = "silhouette") +
+       theme_classic()
+```
+
+The Silhouette is an iteractivy application of PAM algorithm varying the number of cluster from 1 to 10 and then plotting. The objective is to find the curve knee, where the optimized solution will be find. So, from the Graphic X, the optimized number of cluster is 2.
+
+
+
+
+
+
+Besides this straighforward solution, I will apply a statistical method to ensure the number of cluster called Gap Statistic (R. Tibshirani, G. Walther, and T. Hastie).
+
+
+```{r echo=FALSE}
+# Gap statistic
+set.seed(123)
+fviz_nbclust(as.matrix(db_cluster_std), pam, method = "gap_stat", nboot = 500)+
+labs(subtitle = "Gap statistic method")
+
+
+
+
+```
+
+
+```{r echo=FALSE}
+library("NbClust")
+nb <- NbClust(db_cluster_std,
+              distance = "manhattan",
+              min.nc = 2,
+              max.nc = 10,
+              method = "complete",
+              index = "all")
+
+
+fviz_nbclust(nb)
+```
+
+
+### 4.3.3. PAM Clustering Application
+
+```{r echo=FALSE}
+pam_res <- pam(as.matrix(db_cluster_std_dist),2)
+
+fviz_cluster(pam_res,
+             palette = c("#00AFBB", "#FC4E07"), # color palette
+             ellipse.type = "t", # Concentration ellipse
+             repel = TRUE, # Avoid label overplotting (slow)
+             ggtheme = theme_classic()
+             )
+```
+
+### 4.3.4. Agglomerative
+
+```{r echo=FALSE}
+### 4.3.3. PAM Clustering
+# Tree creation
+hc_res <- hclust(d = dist(db_cluster_std), method = "ward.D2")
+```
+
+
+### 4.3.4. Dendrogram
+
+```{r echo=FALSE}
+# Visualisation
+# cex: label size
+fviz_dend(hc_res, cex = 0.5)
+
+
+fviz_dend(hc_res, k =4, # Cut in four groups
+          cex = 0.5, # label size 
+          horiz = TRUE,
+          k_colors = "jco",
+          rect = TRUE,
+          rect_border = "jco",
+          rect_fill = TRUE,
+          color_labels_by_k = TRUE # color labels by groups 
+)
+
+
+
+
+```
+
+### 4.3.4. Evaluating the Tree
+
+```{r echo=FALSE}
+# Compute cophentic distance
+coph_res <- cophenetic(hc_res)
+
+# Correlation between cophenetic distance and
+# the original distance
+cor(dist(db_cluster_std), coph_res)
+```
+
+
+
+```{r echo=FALSE}
+hc_res2 <- hclust(d = dist(db_cluster_std), method = "average")
+
+
+coph_res2 <- cophenetic(hc_res2)
+
+cor(dist(db_cluster_std), coph_res2)
+
+```
+
+### 4.3.5. Comparison
+
+
+```{r echo=FALSE}
+library(dendextend)
+dend_compare <- dendlist(as.dendrogram(hc_res),as.dendrogram(hc_res2))
+
+tanglegram(as.dendrogram(hc_res), as.dendrogram(hc_res2))
+
+```
+
+
+
+
+## 4.6.
+
+
+
+
+
+
+
+
 
 ```{r,echo=FALSE}
 # Simple Clusterization
